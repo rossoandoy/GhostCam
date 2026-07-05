@@ -1,23 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Image, Text } from 'react-native';
+import React, { useState, useCallback, useRef } from 'react';
+import { View, StyleSheet, TouchableOpacity, Image, Text, Alert, Linking } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as FileSystem from 'expo-file-system';
+import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as FileSystem from 'expo-file-system/legacy';
+
+const GHOST_OPACITY_STEPS = [0.15, 0.3, 0.5];
 
 export default function CameraScreen({ navigation }) {
   const [permission, requestPermission] = useCameraPermissions();
   const [ghostImageUri, setGhostImageUri] = useState(null);
   const [latestImageUri, setLatestImageUri] = useState(null);
+  const [ghostOpacity, setGhostOpacity] = useState(0.3);
   const cameraRef = useRef(null);
+  const insets = useSafeAreaInsets();
 
-  useEffect(() => {
-    loadLatestImage();
-  }, []);
-
-  const loadLatestImage = async () => {
+  const loadLatestImage = useCallback(async () => {
     try {
       const dirInfo = await FileSystem.getInfoAsync(FileSystem.documentDirectory + 'photos/');
       if (!dirInfo.exists) {
         await FileSystem.makeDirectoryAsync(FileSystem.documentDirectory + 'photos/', { intermediates: true });
+        setGhostImageUri(null);
+        setLatestImageUri(null);
         return;
       }
 
@@ -28,11 +32,20 @@ export default function CameraScreen({ navigation }) {
         const latestImage = FileSystem.documentDirectory + 'photos/' + imageFiles[0];
         setGhostImageUri(latestImage);
         setLatestImageUri(latestImage);
+      } else {
+        setGhostImageUri(null);
+        setLatestImageUri(null);
       }
     } catch (error) {
       console.error('Error loading latest image:', error);
     }
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadLatestImage();
+    }, [loadLatestImage])
+  );
 
   const takePicture = async () => {
     if (cameraRef.current) {
@@ -62,8 +75,17 @@ export default function CameraScreen({ navigation }) {
         setLatestImageUri(newPath);
       } catch (error) {
         console.error('Error taking picture:', error);
+        Alert.alert('エラー', '写真の保存に失敗しました。もう一度お試しください。');
       }
     }
+  };
+
+  const cycleGhostOpacity = () => {
+    setGhostOpacity(current => {
+      const currentIndex = GHOST_OPACITY_STEPS.indexOf(current);
+      const nextIndex = (currentIndex + 1) % GHOST_OPACITY_STEPS.length;
+      return GHOST_OPACITY_STEPS[nextIndex];
+    });
   };
 
   if (!permission) {
@@ -71,11 +93,29 @@ export default function CameraScreen({ navigation }) {
   }
 
   if (!permission.granted) {
+    const isBlocked = permission.canAskAgain === false;
+
     return (
       <View style={styles.container}>
-        <Text style={styles.message}>カメラへのアクセスを許可してください</Text>
-        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>許可する</Text>
+        <Text style={styles.message}>
+          {isBlocked
+            ? 'カメラへのアクセスが拒否されています。設定アプリから許可してください。'
+            : 'カメラへのアクセスを許可してください'}
+        </Text>
+        <TouchableOpacity
+          style={styles.permissionButton}
+          onPress={
+            isBlocked
+              ? () =>
+                  Linking.openSettings().catch(() =>
+                    Alert.alert('エラー', '設定を開けませんでした。')
+                  )
+              : requestPermission
+          }
+        >
+          <Text style={styles.permissionButtonText}>
+            {isBlocked ? '設定を開く' : '許可する'}
+          </Text>
         </TouchableOpacity>
       </View>
     );
@@ -91,13 +131,19 @@ export default function CameraScreen({ navigation }) {
         {ghostImageUri && (
           <Image
             source={{ uri: ghostImageUri }}
-            style={styles.ghostOverlay}
+            style={[styles.ghostOverlay, { opacity: ghostOpacity }]}
             resizeMode="cover"
           />
         )}
 
-        <View style={styles.controls}>
+        <View style={[styles.controls, { paddingBottom: insets.bottom + 24 }]}>
           <View style={styles.buttonContainer}>
+            {ghostImageUri && (
+              <TouchableOpacity style={styles.opacityButton} onPress={cycleGhostOpacity}>
+                <Text style={styles.opacityButtonText}>{Math.round(ghostOpacity * 100)}%</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity style={styles.shutterButton} onPress={takePicture}>
               <View style={styles.shutterButtonInner} />
             </TouchableOpacity>
@@ -140,7 +186,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    opacity: 0.3,
     zIndex: 1,
   },
   controls: {
@@ -148,7 +193,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: 40,
     zIndex: 2,
   },
   buttonContainer: {
@@ -192,6 +236,23 @@ const styles = StyleSheet.create({
   },
   galleryButtonText: {
     fontSize: 24,
+  },
+  opacityButton: {
+    position: 'absolute',
+    left: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  opacityButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
   },
   message: {
     color: '#fff',
