@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "ヒビカメ",
+    "slug": "GhostCam",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "カメラへのアクセスを許可してください。定点観測の撮影に使用します。"
+        }
+      ]
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.rossoandoy.ghostcam",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "カメラへのアクセスを許可してください。定点観測の撮影に使用します。"
+      }
+    },
+    "android": {
+      "package": "com.rossoandoy.ghostcam",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}
