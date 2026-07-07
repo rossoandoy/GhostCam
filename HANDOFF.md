@@ -1,0 +1,54 @@
+# 引き継ぎ: ヒビカメ App Store 公開（2026-07-07 時点）
+
+読み手: このプロジェクトを引き継ぐ AI エージェント（Opus / Sonnet / codex）と本人。
+進め方は `RELEASE_PLAYBOOK.md`、規約は `CLAUDE.md` を参照。
+
+## やったこと（すべて push 済み）
+
+- 公開計画を策定し codex レビュー済み（指摘7件反映）。方針: iOS 先行 / 表示名ヒビカメ / Bundle ID `com.rossoandoy.ghostcam`
+- git/GitHub 初期化: 空 repo だった github.com/rossoandoy/GhostCam に main を push（6f1c4f6）
+- **[P0] SDK 55 で中核機能が全滅するバグを修正**: `expo-file-system/legacy` import に変更（b1816f4）。lint クリーン・`node --check` パス。**実機未確認**
+- 審査対策実装（b1816f4）: エラー Alert / 権限拒否時の「設定を開く」/ SafeArea / useFocusEffect / 写真ビューア（共有・削除）/ ゴースト透明度切替 15・30・50% / アプリ内プラポリリンク — Guideline 4.2・5.1.1 対策
+- ビルド構成: `eas.json`（development/preview/production）+ `expo-dev-client` 追加
+- ストア文書: `docs/index.md`（プラポリ日英+サポート）、`docs/store-metadata.md`（説明文・キーワード・英語審査ノート・App Privacy 根拠）
+- ESLint（flat config）導入、README 追加（6d593bd）
+- 上記実装は codex レビュー済み（URI キャプチャ・deleteAsync idempotent・Linking catch 等の指摘を反映済み）
+
+## 変更ファイル
+
+- `src/screens/CameraScreen.js` / `GalleryScreen.js` — legacy import + 上記全機能
+- `App.js` — SafeAreaProvider 追加
+- `app.json` — 表示名ヒビカメ / bundleIdentifier / buildNumber:"1" / supportsTablet:false / android.package
+- `package.json` — name:ghostcam、expo-dev-client / eslint 系追加、lint script
+- 新規: `eas.json` / `eslint.config.js` / `docs/index.md` / `docs/store-metadata.md` / `README.md` / `CLAUDE.md` / `RELEASE_PLAYBOOK.md` / 本ファイル
+
+## 未完了・注意点
+
+- **Apple Developer Program: 支払い済み・承認保留中**（2026-07-07 時点）。承認メールが来るまでフェーズ3（ビルド）は開始不可
+- `eas init` 未実施（app.json に projectId なし）。Expo アカウント作成状況は本人に要確認
+- GitHub Pages 未有効化（https://rossoandoy.github.io/GhostCam/ は 404）
+- `docs/index.md` の `{{CONTACT_EMAIL}}`（6箇所）が未置換 — **公開して良いメールアドレスを本人に確認してから**置換すること
+- 全コードは**実機未確認**（Expo Go SDK 55 iOS 版が無いため確認手段がまだ無い）。特にゴーストとプレビューのアスペクト比一致はフェーズ3 E2E の最重要確認項目
+- eas.json に submit セクションは意図的に無い（ASC アプリ作成後に ascAppId 付きで追加する。プレイブック フェーズ5参照）
+- ASC で「ヒビカメ」の名称空きは未確認
+
+## 次のアクション
+
+1. 🧑 Apple 承認メール待ち（〜48h）。並行して: Expo アカウント + `npx eas-cli login` + `npx eas-cli init`（→ AI: projectId 入り app.json を commit）
+2. 🧑 GitHub Pages 有効化 + 連絡先メール決定（→ AI: sed で置換・commit・200 確認）= プレイブック「フェーズ4残り」
+3. Apple 承認後: プレイブック フェーズ3（dev build → 実機 E2E → スクショ）
+4. 以降フェーズ5→6 をプレイブック通りに。リジェクト時は「リジェクト対応プレイブック」
+
+---
+
+## 次エージェント向け初回プロンプト（コピペ用）
+
+```
+ヒビカメ（GhostCam）の App Store 公開プロジェクトの続きをお願いします。
+まず CLAUDE.md / HANDOFF.md / RELEASE_PLAYBOOK.md を読んでください。
+現在の状況: <Apple 承認が下りた / まだ 等を記入>
+HANDOFF.md の「次のアクション」から現在のフェーズを特定し、プレイブックの該当セクションに従って進めてください。
+実装はサブエージェント委任可・コミット前に npm run lint と codex レビュー（CLAUDE.md のコマンド）を必ず通すこと。
+人間タスク（🧑）は実行せず、コマンドと手順の提示までにとどめてください。
+作業後は HANDOFF.md の「やったこと」「次のアクション」を更新して commit / push してください。
+```
