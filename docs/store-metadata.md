@@ -133,7 +133,7 @@
 | マーケティングURL（任意） | https://rossoandoy.github.io/GhostCam/ |
 | プライバシーポリシーURL | https://rossoandoy.github.io/GhostCam/ |
 
-※`docs/index.md` を GitHub Pages（mainブランチ /docs）で公開する想定です。公開前に、ページ内の `{{CONTACT_EMAIL}}` を実際の連絡先メールアドレスに置換してください。
+※`docs/index.md` は GitHub Pages（mainブランチ /docs）で公開済み。連絡先メールは hibicam.app@gmail.com（置換済み・2026-07-11）。
 
 ---
 

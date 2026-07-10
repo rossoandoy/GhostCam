@@ -31,18 +31,19 @@
 - **Apple Developer Program: 承認済み**（2026-07-10）。コード側のビルド前検証も完了し、フェーズ3のブロッカーは Expo ログインのみ
 - `eas login` / `eas init` は完了（2026-07-11、projectId: 3c29766c… / owner: rossoando が app.json に反映済み）
 - eas init 時に `android.permissions` へ `RECORD_AUDIO` が自動追加された。本アプリは動画撮影しないため **Android 公開時（フェーズ7）に `blockedPermissions` で除外するか要検討**（Data safety 申告に影響。iOS には無関係）
-- GitHub Pages 未有効化（https://rossoandoy.github.io/GhostCam/ は 404）
-- `docs/index.md` の `{{CONTACT_EMAIL}}`（6箇所）が未置換 — **専用アドレスを新設する方針で本人が作成中**。アドレス確定後に置換すること
+- GitHub Pages 公開済み（https://rossoandoy.github.io/GhostCam/ が 200、2026-07-11 確認）
+- 連絡先メールは専用アドレス **hibicam.app@gmail.com** に置換済み（フェーズ4は完全クローズ）
+- dev build 完了・実機インストール済み。iOS のデベロッパモード有効化を案内済み（設定 → プライバシーとセキュリティ → デベロッパモード ON → 再起動）。**実機 E2E は未実施**
 - 全コードは**実機未確認**（Expo Go SDK 55 iOS 版が無いため確認手段がまだ無い）。特にゴーストとプレビューのアスペクト比一致はフェーズ3 E2E の最重要確認項目
 - eas.json に submit セクションは意図的に無い（ASC アプリ作成後に ascAppId 付きで追加する。プレイブック フェーズ5参照）
 - ASC で「ヒビカメ」の名称空きは未確認
 
 ## 次のアクション
 
-1. 🧑 `npx eas-cli login` → `npx eas-cli init`（→ AI: projectId 入り app.json を commit）
-2. 🧑 専用メール新設 → AI が `docs/index.md` を置換 → 🧑 GitHub Pages 有効化 → AI が 200 確認
-3. 🧑 `npx eas-cli device:create` → `npx eas-cli build --profile development --platform ios` → プレイブック フェーズ3の実機 E2E チェックリスト + スクショ
-4. 以降フェーズ5→6 をプレイブック通りに。リジェクト時は「リジェクト対応プレイブック」
+1. 🧑 iPhone のデベロッパモードを ON → dev build を起動 → **プレイブック フェーズ3の実機 E2E チェックリスト**（最重要: ゴーストとプレビューのアスペクト比一致）→ 結果を AI に報告
+2. 🧑 E2E パス後、同ビルドでスクリーンショット撮影（3〜5枚）
+3. フェーズ5（ASC アプリ作成 → production build → EAS Submit → TestFlight）→ フェーズ6（審査提出）をプレイブック通りに
+4. E2E で問題が出たら AI が修正タスク化（アスペクト比ズレは expo-image-manipulator crop カード）
 
 ---
 
