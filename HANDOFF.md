@@ -1,4 +1,4 @@
-# 引き継ぎ: ヒビカメ App Store 公開（2026-07-07 時点）
+# 引き継ぎ: ヒビカメ App Store 公開（2026-07-10 時点）
 
 読み手: このプロジェクトを引き継ぐ AI エージェント（Opus / Sonnet / codex）と本人。
 進め方は `RELEASE_PLAYBOOK.md`、規約は `CLAUDE.md` を参照。
@@ -13,6 +13,10 @@
 - ストア文書: `docs/index.md`（プラポリ日英+サポート）、`docs/store-metadata.md`（説明文・キーワード・英語審査ノート・App Privacy 根拠）
 - ESLint（flat config）導入、README 追加（6d593bd）
 - 上記実装は codex レビュー済み（URI キャプチャ・deleteAsync idempotent・Linking catch 等の指摘を反映済み）
+- **2026-07-10（Apple 承認後のビルド前検証、すべて push 済み）**:
+  - expo-doctor 19/19 パス化: SDK 55 要求バージョンへ依存整合 + **`react-native-gesture-handler` 追加**（@react-navigation/stack の必須 peer。未導入だと dev/production build で起動クラッシュの恐れがあった）（fc14f9b）
+  - **CameraView の children を絶対配置の兄弟要素へ移動**（expo-camera が公式に「非サポート・クラッシュしうる」と警告するパターンだった）。pointerEvents 透過、コンテナスタイル分離、GestureHandlerRootView 追加（03c9375）。Sonnet フレッシュ監査 + codex レビュー済み
+  - `npx expo export --platform ios` でバンドルコンパイル成功を確認（実機は未確認のまま）
 
 ## 変更ファイル
 
@@ -24,19 +28,19 @@
 
 ## 未完了・注意点
 
-- **Apple Developer Program: 支払い済み・承認保留中**（2026-07-07 時点）。承認メールが来るまでフェーズ3（ビルド）は開始不可
-- `eas init` 未実施（app.json に projectId なし）。Expo アカウント作成状況は本人に要確認
+- **Apple Developer Program: 承認済み**（2026-07-10）。コード側のビルド前検証も完了し、フェーズ3のブロッカーは Expo ログインのみ
+- `eas login` / `eas init` 未実施（app.json に projectId なし）
 - GitHub Pages 未有効化（https://rossoandoy.github.io/GhostCam/ は 404）
-- `docs/index.md` の `{{CONTACT_EMAIL}}`（6箇所）が未置換 — **公開して良いメールアドレスを本人に確認してから**置換すること
+- `docs/index.md` の `{{CONTACT_EMAIL}}`（6箇所）が未置換 — **専用アドレスを新設する方針で本人が作成中**。アドレス確定後に置換すること
 - 全コードは**実機未確認**（Expo Go SDK 55 iOS 版が無いため確認手段がまだ無い）。特にゴーストとプレビューのアスペクト比一致はフェーズ3 E2E の最重要確認項目
 - eas.json に submit セクションは意図的に無い（ASC アプリ作成後に ascAppId 付きで追加する。プレイブック フェーズ5参照）
 - ASC で「ヒビカメ」の名称空きは未確認
 
 ## 次のアクション
 
-1. 🧑 Apple 承認メール待ち（〜48h）。並行して: Expo アカウント + `npx eas-cli login` + `npx eas-cli init`（→ AI: projectId 入り app.json を commit）
-2. 🧑 GitHub Pages 有効化 + 連絡先メール決定（→ AI: sed で置換・commit・200 確認）= プレイブック「フェーズ4残り」
-3. Apple 承認後: プレイブック フェーズ3（dev build → 実機 E2E → スクショ）
+1. 🧑 `npx eas-cli login` → `npx eas-cli init`（→ AI: projectId 入り app.json を commit）
+2. 🧑 専用メール新設 → AI が `docs/index.md` を置換 → 🧑 GitHub Pages 有効化 → AI が 200 確認
+3. 🧑 `npx eas-cli device:create` → `npx eas-cli build --profile development --platform ios` → プレイブック フェーズ3の実機 E2E チェックリスト + スクショ
 4. 以降フェーズ5→6 をプレイブック通りに。リジェクト時は「リジェクト対応プレイブック」
 
 ---
