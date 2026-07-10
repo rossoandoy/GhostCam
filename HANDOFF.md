@@ -29,7 +29,8 @@
 ## 未完了・注意点
 
 - **Apple Developer Program: 承認済み**（2026-07-10）。コード側のビルド前検証も完了し、フェーズ3のブロッカーは Expo ログインのみ
-- `eas login` / `eas init` 未実施（app.json に projectId なし）
+- `eas login` / `eas init` は完了（2026-07-11、projectId: 3c29766c… / owner: rossoando が app.json に反映済み）
+- eas init 時に `android.permissions` へ `RECORD_AUDIO` が自動追加された。本アプリは動画撮影しないため **Android 公開時（フェーズ7）に `blockedPermissions` で除外するか要検討**（Data safety 申告に影響。iOS には無関係）
 - GitHub Pages 未有効化（https://rossoandoy.github.io/GhostCam/ は 404）
 - `docs/index.md` の `{{CONTACT_EMAIL}}`（6箇所）が未置換 — **専用アドレスを新設する方針で本人が作成中**。アドレス確定後に置換すること
 - 全コードは**実機未確認**（Expo Go SDK 55 iOS 版が無いため確認手段がまだ無い）。特にゴーストとプレビューのアスペクト比一致はフェーズ3 E2E の最重要確認項目

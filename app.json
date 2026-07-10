@@ -24,7 +24,8 @@
       "bundleIdentifier": "com.rossoandoy.ghostcam",
       "buildNumber": "1",
       "infoPlist": {
-        "NSCameraUsageDescription": "カメラへのアクセスを許可してください。定点観測の撮影に使用します。"
+        "NSCameraUsageDescription": "カメラへのアクセスを許可してください。定点観測の撮影に使用します。",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -34,10 +35,20 @@
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3c29766c-19ab-4882-9322-ee302cff72eb"
+      }
+    },
+    "owner": "rossoando"
   }
 }
