@@ -89,14 +89,14 @@ export default function CameraScreen({ navigation }) {
   };
 
   if (!permission) {
-    return <View style={styles.container} />;
+    return <View style={styles.permissionContainer} />;
   }
 
   if (!permission.granted) {
     const isBlocked = permission.canAskAgain === false;
 
     return (
-      <View style={styles.container}>
+      <View style={styles.permissionContainer}>
         <Text style={styles.message}>
           {isBlocked
             ? 'カメラへのアクセスが拒否されています。設定アプリから許可してください。'
@@ -121,56 +121,66 @@ export default function CameraScreen({ navigation }) {
     );
   }
 
+  // CameraView must not have children (officially unsupported; may crash).
+  // Overlay and controls are absolutely-positioned siblings instead.
   return (
-    <View style={styles.container}>
+    <View style={styles.cameraContainer}>
       <CameraView
         style={styles.camera}
         ref={cameraRef}
         facing="back"
+      />
+
+      {ghostImageUri && (
+        <Image
+          pointerEvents="none"
+          source={{ uri: ghostImageUri }}
+          style={[styles.ghostOverlay, { opacity: ghostOpacity }]}
+          resizeMode="cover"
+        />
+      )}
+
+      <View
+        pointerEvents="box-none"
+        style={[styles.controls, { paddingBottom: insets.bottom + 24 }]}
       >
-        {ghostImageUri && (
-          <Image
-            source={{ uri: ghostImageUri }}
-            style={[styles.ghostOverlay, { opacity: ghostOpacity }]}
-            resizeMode="cover"
-          />
-        )}
+        <View pointerEvents="box-none" style={styles.buttonContainer}>
+          {ghostImageUri && (
+            <TouchableOpacity style={styles.opacityButton} onPress={cycleGhostOpacity}>
+              <Text style={styles.opacityButtonText}>{Math.round(ghostOpacity * 100)}%</Text>
+            </TouchableOpacity>
+          )}
 
-        <View style={[styles.controls, { paddingBottom: insets.bottom + 24 }]}>
-          <View style={styles.buttonContainer}>
-            {ghostImageUri && (
-              <TouchableOpacity style={styles.opacityButton} onPress={cycleGhostOpacity}>
-                <Text style={styles.opacityButtonText}>{Math.round(ghostOpacity * 100)}%</Text>
-              </TouchableOpacity>
+          <TouchableOpacity style={styles.shutterButton} onPress={takePicture}>
+            <View style={styles.shutterButtonInner} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.galleryButton}
+            onPress={() => navigation.navigate('Gallery')}
+          >
+            {latestImageUri ? (
+              <Image
+                source={{ uri: latestImageUri }}
+                style={styles.galleryThumbnail}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text style={styles.galleryButtonText}>📷</Text>
             )}
-
-            <TouchableOpacity style={styles.shutterButton} onPress={takePicture}>
-              <View style={styles.shutterButtonInner} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.galleryButton}
-              onPress={() => navigation.navigate('Gallery')}
-            >
-              {latestImageUri ? (
-                <Image
-                  source={{ uri: latestImageUri }}
-                  style={styles.galleryThumbnail}
-                  resizeMode="cover"
-                />
-              ) : (
-                <Text style={styles.galleryButtonText}>📷</Text>
-              )}
-            </TouchableOpacity>
-          </View>
+          </TouchableOpacity>
         </View>
-      </CameraView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  cameraContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  permissionContainer: {
     flex: 1,
     backgroundColor: '#000',
     justifyContent: 'center',
