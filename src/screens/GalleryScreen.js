@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -14,39 +14,53 @@ import {
   Linking,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import * as FileSystem from 'expo-file-system/legacy';
+import { useSeries } from '../context/SeriesContext';
+import { listSeriesPhotos, deletePhoto } from '../lib/photoLib';
 
 const PRIVACY_POLICY_URL = 'https://rossoandoy.github.io/GhostCam/';
 
 export default function GalleryScreen({ navigation }) {
+  const { status, activeSeries } = useSeries();
   const [photos, setPhotos] = useState([]);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const isMountedRef = useRef(false);
 
-  const loadPhotos = useCallback(async () => {
-    try {
-      const dirInfo = await FileSystem.getInfoAsync(FileSystem.documentDirectory + 'photos/');
-      if (!dirInfo.exists) {
-        return;
-      }
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
-      const files = await FileSystem.readDirectoryAsync(FileSystem.documentDirectory + 'photos/');
-      const imageFiles = files
-        .filter(file => file.endsWith('.jpg'))
-        .sort()
-        .reverse()
-        .map(filename => FileSystem.documentDirectory + 'photos/' + filename);
-
-      setPhotos(imageFiles);
-    } catch (error) {
-      console.error('Error loading photos:', error);
-      Alert.alert('エラー', '写真の読み込みに失敗しました。');
-    }
+  const refreshPhotos = useCallback(async seriesId => {
+    const list = await listSeriesPhotos(seriesId);
+    if (!isMountedRef.current) return;
+    setPhotos(list);
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      loadPhotos();
-    }, [loadPhotos])
+      let alive = true;
+
+      if (status === 'ready' && activeSeries?.id) {
+        listSeriesPhotos(activeSeries.id)
+          .then(list => {
+            if (!alive) return;
+            setPhotos(list);
+          })
+          .catch(error => {
+            console.error('Error loading photos:', error);
+            if (!alive) return;
+            Alert.alert('エラー', '写真の読み込みに失敗しました。');
+          });
+      } else {
+        setPhotos([]);
+      }
+
+      return () => {
+        alive = false;
+      };
+    }, [status, activeSeries?.id])
   );
 
   const closeViewer = () => {
@@ -54,7 +68,7 @@ export default function GalleryScreen({ navigation }) {
   };
 
   const handleShare = async () => {
-    const photoUri = selectedPhoto;
+    const photoUri = selectedPhoto?.uri;
     if (!photoUri) return;
 
     try {
@@ -66,7 +80,7 @@ export default function GalleryScreen({ navigation }) {
   };
 
   const handleDelete = () => {
-    const photoUri = selectedPhoto;
+    const photoUri = selectedPhoto?.uri;
     if (!photoUri) return;
 
     Alert.alert(
@@ -79,8 +93,10 @@ export default function GalleryScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              await FileSystem.deleteAsync(photoUri, { idempotent: true });
-              await loadPhotos();
+              await deletePhoto(photoUri);
+              if (activeSeries?.id) {
+                await refreshPhotos(activeSeries.id);
+              }
               closeViewer();
             } catch (error) {
               console.error('Error deleting photo:', error);
@@ -99,7 +115,7 @@ export default function GalleryScreen({ navigation }) {
     return (
       <TouchableOpacity onPress={() => setSelectedPhoto(item)}>
         <Image
-          source={{ uri: item }}
+          source={{ uri: item.uri }}
           style={[styles.gridItem, { width: itemSize, height: itemSize }]}
           resizeMode="cover"
         />
@@ -107,40 +123,56 @@ export default function GalleryScreen({ navigation }) {
     );
   };
 
+  const isReady = status === 'ready' && !!activeSeries;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backButtonText}>← 戻る</Text>
-        </TouchableOpacity>
+        <View style={styles.headerSide}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backButtonText}>← 戻る</Text>
+          </TouchableOpacity>
+        </View>
 
-        <TouchableOpacity
-          style={styles.privacyButton}
-          onPress={() =>
-            Linking.openURL(PRIVACY_POLICY_URL).catch(() =>
-              Alert.alert('エラー', 'ページを開けませんでした。')
-            )
-          }
-        >
-          <Text style={styles.privacyButtonText}>プライバシー</Text>
-        </TouchableOpacity>
+        <View style={styles.headerCenter}>
+          {isReady && (
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {activeSeries.name}（{photos.length}枚）
+            </Text>
+          )}
+        </View>
+
+        <View style={[styles.headerSide, styles.headerSideRight]}>
+          <TouchableOpacity
+            style={styles.privacyButton}
+            onPress={() =>
+              Linking.openURL(PRIVACY_POLICY_URL).catch(() =>
+                Alert.alert('エラー', 'ページを開けませんでした。')
+              )
+            }
+          >
+            <Text style={styles.privacyButtonText}>プライバシー</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {photos.length > 0 ? (
+      {!isReady ? (
+        <View style={styles.emptyState} />
+      ) : photos.length > 0 ? (
         <FlatList
           data={photos}
           renderItem={renderItem}
-          keyExtractor={(item) => item}
+          keyExtractor={(item) => item.uri}
           numColumns={3}
           contentContainerStyle={styles.gridContainer}
         />
       ) : (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyStateText}>写真がありません</Text>
-          <Text style={styles.emptyStateSubtext}>カメラで写真を撮影してください</Text>
+          <Text style={styles.emptyStateText}>このシリーズにはまだ写真がありません</Text>
+          <Text style={styles.emptyStateSubtext}>カメラで1枚目を撮影してみましょう</Text>
         </View>
       )}
 
@@ -153,7 +185,7 @@ export default function GalleryScreen({ navigation }) {
         <SafeAreaView style={styles.viewerContainer}>
           {selectedPhoto && (
             <Image
-              source={{ uri: selectedPhoto }}
+              source={{ uri: selectedPhoto.uri }}
               style={styles.viewerImage}
               resizeMode="contain"
             />
@@ -190,6 +222,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#000',
+  },
+  headerSide: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  headerSideRight: {
+    alignItems: 'flex-end',
+  },
+  headerCenter: {
+    flex: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   backButton: {
     paddingVertical: 8,

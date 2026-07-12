@@ -15,7 +15,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "カメラへのアクセスを許可してください。定点観測の撮影に使用します。"
+          "cameraPermission": "カメラへのアクセスを許可してください。定点観測の撮影に使用します。",
+          "recordAudioAndroid": false
         }
       ]
     ],
@@ -37,8 +38,7 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.CAMERA"
       ]
     },
     "web": {

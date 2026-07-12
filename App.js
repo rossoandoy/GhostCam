@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import CameraScreen from './src/screens/CameraScreen';
 import GalleryScreen from './src/screens/GalleryScreen';
+import { SeriesProvider } from './src/context/SeriesContext';
 
 const Stack = createStackNavigator();
 
@@ -13,17 +14,19 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        <NavigationContainer>
-          <Stack.Navigator
-            initialRouteName="Camera"
-            screenOptions={{
-              headerShown: false,
-            }}
-          >
-            <Stack.Screen name="Camera" component={CameraScreen} />
-            <Stack.Screen name="Gallery" component={GalleryScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
+        <SeriesProvider>
+          <NavigationContainer>
+            <Stack.Navigator
+              initialRouteName="Camera"
+              screenOptions={{
+                headerShown: false,
+              }}
+            >
+              <Stack.Screen name="Camera" component={CameraScreen} />
+              <Stack.Screen name="Gallery" component={GalleryScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
+        </SeriesProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

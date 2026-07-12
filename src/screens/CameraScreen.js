@@ -3,80 +3,81 @@ import { View, StyleSheet, TouchableOpacity, Image, Text, Alert, Linking } from 
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as FileSystem from 'expo-file-system/legacy';
+import { useSeries } from '../context/SeriesContext';
+import { getLatestSeriesPhoto, saveCameraPhoto, formatCapturedAt } from '../lib/photoLib';
+import SeriesPickerModal from '../components/SeriesPickerModal';
+import OnboardingOverlay from '../components/OnboardingOverlay';
 
 const GHOST_OPACITY_STEPS = [0.15, 0.3, 0.5];
 
 export default function CameraScreen({ navigation }) {
+  const { status, onboardingCompleted, activeSeries } = useSeries();
   const [permission, requestPermission] = useCameraPermissions();
-  const [ghostImageUri, setGhostImageUri] = useState(null);
-  const [latestImageUri, setLatestImageUri] = useState(null);
+  const [ghostPhoto, setGhostPhoto] = useState(null);
+  const [latestPhoto, setLatestPhoto] = useState(null);
   const [ghostOpacity, setGhostOpacity] = useState(0.3);
+  const [pickerVisible, setPickerVisible] = useState(false);
   const cameraRef = useRef(null);
   const insets = useSafeAreaInsets();
 
-  const loadLatestImage = useCallback(async () => {
-    try {
-      const dirInfo = await FileSystem.getInfoAsync(FileSystem.documentDirectory + 'photos/');
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(FileSystem.documentDirectory + 'photos/', { intermediates: true });
-        setGhostImageUri(null);
-        setLatestImageUri(null);
-        return;
-      }
-
-      const files = await FileSystem.readDirectoryAsync(FileSystem.documentDirectory + 'photos/');
-      const imageFiles = files.filter(file => file.endsWith('.jpg')).sort().reverse();
-
-      if (imageFiles.length > 0) {
-        const latestImage = FileSystem.documentDirectory + 'photos/' + imageFiles[0];
-        setGhostImageUri(latestImage);
-        setLatestImageUri(latestImage);
-      } else {
-        setGhostImageUri(null);
-        setLatestImageUri(null);
-      }
-    } catch (error) {
-      console.error('Error loading latest image:', error);
-    }
-  }, []);
+  // Tracks the series the user has selected "right now" so async work
+  // started for a previous series can detect it's stale and bail out
+  // instead of writing that series' photo into the current view.
+  const activeSeriesIdRef = useRef(null);
+  activeSeriesIdRef.current = activeSeries?.id;
 
   useFocusEffect(
     useCallback(() => {
-      loadLatestImage();
-    }, [loadLatestImage])
+      let alive = true;
+      const seriesId = activeSeries?.id;
+
+      // Clear immediately so a series switch never shows the previous
+      // series' ghost/thumbnail while the new one is loading.
+      setGhostPhoto(null);
+      setLatestPhoto(null);
+
+      if (status === 'ready' && seriesId) {
+        getLatestSeriesPhoto(seriesId)
+          .then(photo => {
+            if (!alive || activeSeriesIdRef.current !== seriesId) return;
+            setGhostPhoto(photo);
+            setLatestPhoto(photo);
+          })
+          .catch(error => {
+            if (!alive || activeSeriesIdRef.current !== seriesId) return;
+            console.error('Error loading latest image:', error);
+          });
+      }
+
+      return () => {
+        alive = false;
+      };
+    }, [status, activeSeries?.id])
   );
 
   const takePicture = async () => {
-    if (cameraRef.current) {
-      try {
-        const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.8,
-        });
+    if (!cameraRef.current || !activeSeries?.id) {
+      return;
+    }
 
-        // Create photos directory if it doesn't exist
-        const dirInfo = await FileSystem.getInfoAsync(FileSystem.documentDirectory + 'photos/');
-        if (!dirInfo.exists) {
-          await FileSystem.makeDirectoryAsync(FileSystem.documentDirectory + 'photos/', { intermediates: true });
-        }
+    const seriesId = activeSeries.id;
 
-        // Save with timestamp filename
-        const timestamp = new Date().getTime();
-        const filename = `photo_${timestamp}.jpg`;
-        const newPath = FileSystem.documentDirectory + 'photos/' + filename;
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.8,
+      });
 
-        await FileSystem.moveAsync({
-          from: photo.uri,
-          to: newPath,
-        });
+      const savedPhoto = await saveCameraPhoto(seriesId, photo.uri);
 
-        // Update ghost overlay and latest image
-        setGhostImageUri(newPath);
-        setLatestImageUri(newPath);
-      } catch (error) {
-        console.error('Error taking picture:', error);
-        Alert.alert('エラー', '写真の保存に失敗しました。もう一度お試しください。');
+      // If the user switched series while the photo was being saved, don't
+      // let it appear as the ghost/thumbnail for the now-current series.
+      if (activeSeriesIdRef.current === seriesId) {
+        setGhostPhoto(savedPhoto);
+        setLatestPhoto(savedPhoto);
       }
+    } catch (error) {
+      console.error('Error taking picture:', error);
+      Alert.alert('エラー', '写真の保存に失敗しました。もう一度お試しください。');
     }
   };
 
@@ -87,6 +88,21 @@ export default function CameraScreen({ navigation }) {
       return GHOST_OPACITY_STEPS[nextIndex];
     });
   };
+
+  // Context not loaded yet: nothing meaningful to render.
+  if (status !== 'ready') {
+    return <View style={styles.cameraContainer} />;
+  }
+
+  // Onboarding takes priority over the camera permission flow so the
+  // value proposition is explained before we ask for anything.
+  if (!onboardingCompleted) {
+    return (
+      <View style={styles.cameraContainer}>
+        <OnboardingOverlay onComplete={requestPermission} />
+      </View>
+    );
+  }
 
   if (!permission) {
     return <View style={styles.permissionContainer} />;
@@ -131,10 +147,10 @@ export default function CameraScreen({ navigation }) {
         facing="back"
       />
 
-      {ghostImageUri && (
+      {ghostPhoto && (
         <Image
           pointerEvents="none"
-          source={{ uri: ghostImageUri }}
+          source={{ uri: ghostPhoto.uri }}
           style={[styles.ghostOverlay, { opacity: ghostOpacity }]}
           resizeMode="cover"
         />
@@ -142,10 +158,26 @@ export default function CameraScreen({ navigation }) {
 
       <View
         pointerEvents="box-none"
+        style={[styles.seriesHeader, { top: insets.top + 8 }]}
+      >
+        <TouchableOpacity style={styles.seriesChip} onPress={() => setPickerVisible(true)}>
+          <Text style={styles.seriesChipText}>{activeSeries.name} ▾</Text>
+        </TouchableOpacity>
+
+        {ghostPhoto && (
+          <Text pointerEvents="none" style={styles.infoRow}>
+            {`前回 ${formatCapturedAt(ghostPhoto.capturedAt)}`}
+            {activeSeries.locationLabel ? ` ・${activeSeries.locationLabel}` : ''}
+          </Text>
+        )}
+      </View>
+
+      <View
+        pointerEvents="box-none"
         style={[styles.controls, { paddingBottom: insets.bottom + 24 }]}
       >
         <View pointerEvents="box-none" style={styles.buttonContainer}>
-          {ghostImageUri && (
+          {ghostPhoto && (
             <TouchableOpacity style={styles.opacityButton} onPress={cycleGhostOpacity}>
               <Text style={styles.opacityButtonText}>{Math.round(ghostOpacity * 100)}%</Text>
             </TouchableOpacity>
@@ -159,9 +191,9 @@ export default function CameraScreen({ navigation }) {
             style={styles.galleryButton}
             onPress={() => navigation.navigate('Gallery')}
           >
-            {latestImageUri ? (
+            {latestPhoto ? (
               <Image
-                source={{ uri: latestImageUri }}
+                source={{ uri: latestPhoto.uri }}
                 style={styles.galleryThumbnail}
                 resizeMode="cover"
               />
@@ -171,6 +203,8 @@ export default function CameraScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </View>
+
+      <SeriesPickerModal visible={pickerVisible} onClose={() => setPickerVisible(false)} />
     </View>
   );
 }
@@ -197,6 +231,32 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 1,
+  },
+  seriesHeader: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 2,
+    alignItems: 'center',
+  },
+  seriesChip: {
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  seriesChipText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  infoRow: {
+    marginTop: 6,
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.75)',
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   controls: {
     position: 'absolute',
