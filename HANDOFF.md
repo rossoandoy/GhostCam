@@ -1,4 +1,4 @@
-# 引き継ぎ: ヒビカメ App Store 公開（2026-07-10 時点）
+# 引き継ぎ: ヒビカメ App Store 公開（2026-07-13 時点）
 
 読み手: このプロジェクトを引き継ぐ AI エージェント（Opus / Sonnet / codex）と本人。
 進め方は `RELEASE_PLAYBOOK.md`、規約は `CLAUDE.md` を参照。
@@ -17,6 +17,8 @@
   - expo-doctor 19/19 パス化: SDK 55 要求バージョンへ依存整合 + **`react-native-gesture-handler` 追加**（@react-navigation/stack の必須 peer。未導入だと dev/production build で起動クラッシュの恐れがあった）（fc14f9b）
   - **CameraView の children を絶対配置の兄弟要素へ移動**（expo-camera が公式に「非サポート・クラッシュしうる」と警告するパターンだった）。pointerEvents 透過、コンテナスタイル分離、GestureHandlerRootView 追加（03c9375）。Sonnet フレッシュ監査 + codex レビュー済み
   - `npx expo export --platform ios` でバンドルコンパイル成功を確認（実機は未確認のまま）
+- **2026-07-11〜12**: dev build を実機で起動し MVP の動作確認済み。GitHub Pages 公開 + 連絡先メール（hibicam.app@gmail.com）反映完了
+- **2026-07-13（v1.0 スコープ拡張、dd62b15 で push 済み）**: ユーザー要望により初回提出前に**シリーズ機能**（複数の定点観測を並行運用、series.json + photos/<seriesId>/、切替チップ・Picker/Form モーダル・前回撮影日時と場所ラベルのオーバーレイ表示）と**初回オンボーディング**（1枚・シリーズ名入力・完了後に権限リクエスト）を追加。Plan 設計 → codex 計画レビュー → Sonnet 3並列実装 → codex 実装レビュー（重大2件含む7件）→ 修正反映まで完了。lint / expo export 検証済み。**新機能の実機 E2E は未実施**。Android 布石として recordAudioAndroid:false + RECORD_AUDIO 除去も実施
 
 ## 変更ファイル
 
@@ -40,8 +42,9 @@
 
 ## 次のアクション
 
-1. 🧑 iPhone のデベロッパモードを ON → dev build を起動 → **プレイブック フェーズ3の実機 E2E チェックリスト**（最重要: ゴーストとプレビューのアスペクト比一致）→ 結果を AI に報告
-2. 🧑 E2E パス後、同ビルドでスクリーンショット撮影（3〜5枚）
+1. 🧑 実機 E2E（**シリーズ機能拡張版**。dev build は JS のみの変更なので再ビルド不要 — Metro に接続すれば新コードが載る）:
+   オンボーディング表示→シリーズ名入力→はじめる→権限→撮影→ゴースト+情報行→シリーズ新規作成→切替でゴースト分離→ギャラリーがシリーズ別→長押し編集→再起動で状態維持→旧写真が初回シリーズへ移行→共有/削除→アスペクト比一致
+2. 🧑 E2E パス後、同ビルドでスクリーンショット撮影（3〜5枚。シリーズチップが写る構図で）
 3. フェーズ5（ASC アプリ作成 → production build → EAS Submit → TestFlight）→ フェーズ6（審査提出）をプレイブック通りに
 4. E2E で問題が出たら AI が修正タスク化（アスペクト比ズレは expo-image-manipulator crop カード）
 
