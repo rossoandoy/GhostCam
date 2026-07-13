@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>HibiCam Store Screenshot</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1320px; height: 2868px; overflow: hidden; }
+  body {
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+    background: linear-gradient(168deg, #0e2a24 0%, #123a31 42%, #0b1f1a 100%);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .copy {
+    margin-top: 168px;
+    padding: 0 96px;
+    text-align: center;
+  }
+  .headline {
+    font-size: 104px;
+    font-weight: 700;
+    line-height: 1.32;
+    letter-spacing: 0.02em;
+  }
+  .sub {
+    margin-top: 44px;
+    font-size: 48px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.72);
+  }
+  .device {
+    margin-top: 110px;
+    width: 960px;
+    height: 1980px;
+    background: #16211e;
+    border-radius: 128px;
+    border: 6px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 60px 140px rgba(0, 0, 0, 0.55);
+    padding: 44px;
+    position: relative;
+  }
+  .screen {
+    width: 100%;
+    height: 100%;
+    border-radius: 88px;
+    overflow: hidden;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* iPhone 8 capture is 750x1334 (16:9-ish); the frame window is taller.
+     object-fit: cover crops a little top/bottom — acceptable for marketing
+     shots. Switch to contain via ?fit=contain if cropping hurts a slide. */
+  .screen img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .screen img.contain { object-fit: contain; }
+  .badge {
+    margin-top: 96px;
+    font-size: 40px;
+    color: rgba(255, 255, 255, 0.55);
+    letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+  <div class="copy">
+    <div class="headline" id="headline"></div>
+    <div class="sub" id="sub"></div>
+  </div>
+  <div class="device">
+    <div class="screen"><img id="shot" src="" alt=""></div>
+  </div>
+  <div class="badge">ヒビカメ — 定点観測カメラ</div>
+
+<script>
+  const SLIDES = [
+    {
+      img: "raw/01-onboarding.png",
+      headline: "まいにち、<br>おなじ場所から。",
+      sub: "定点観測をはじめる、いちばんかんたんな方法。",
+    },
+    {
+      img: "raw/02-camera-ghost.png",
+      headline: "前回の写真が、<br>うっすら重なる。",
+      sub: "同じ画角に合わせて、シャッターを押すだけ。",
+    },
+    {
+      img: "raw/03-series-picker.png",
+      headline: "子供の成長も、<br>家庭菜園も。",
+      sub: "シリーズを分けて、まとめて記録。",
+    },
+    {
+      img: "raw/04-gallery.png",
+      headline: "続けるほど、<br>変化が見える。",
+      sub: "シリーズごとに、時系列で振り返り。",
+    },
+    {
+      img: "raw/05-viewer.png",
+      headline: "写真は、<br>端末の中だけ。",
+      sub: "完全オフライン。共有も削除もその場で。",
+    },
+  ];
+  const params = new URLSearchParams(location.search);
+  const slide = SLIDES[(parseInt(params.get("slide"), 10) || 1) - 1] || SLIDES[0];
+  document.getElementById("headline").innerHTML = slide.headline;
+  document.getElementById("sub").textContent = slide.sub;
+  const img = document.getElementById("shot");
+  img.src = slide.img;
+  if (params.get("fit") === "contain") img.classList.add("contain");
+</script>
+</body>
+</html>
