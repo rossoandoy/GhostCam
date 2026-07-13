@@ -27,7 +27,7 @@ export default function SeriesPickerModal({ visible, onClose }) {
     }
   };
 
-  const handleLongPress = series => {
+  const handleEdit = series => {
     setEditingSeries(series);
     setFormVisible(true);
   };
@@ -66,7 +66,7 @@ export default function SeriesPickerModal({ visible, onClose }) {
                     key={series.id}
                     style={styles.row}
                     onPress={() => handleSelect(series.id)}
-                    onLongPress={() => handleLongPress(series)}
+                    onLongPress={() => handleEdit(series)}
                   >
                     <View style={styles.rowTextContainer}>
                       <Text style={styles.rowName}>{series.name}</Text>
@@ -75,6 +75,13 @@ export default function SeriesPickerModal({ visible, onClose }) {
                       )}
                     </View>
                     {isActive && <Text style={styles.checkmark}>✓</Text>}
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => handleEdit(series)}
+                    >
+                      <Text style={styles.editButtonText}>編集</Text>
+                    </TouchableOpacity>
                   </TouchableOpacity>
                 );
               })}
@@ -149,6 +156,18 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     marginLeft: 12,
+  },
+  editButton: {
+    marginLeft: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  editButtonText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 13,
+    fontWeight: '600',
   },
   addRow: {
     paddingVertical: 14,
