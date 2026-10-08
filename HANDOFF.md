@@ -18,6 +18,7 @@
   - **CameraView の children を絶対配置の兄弟要素へ移動**（expo-camera が公式に「非サポート・クラッシュしうる」と警告するパターンだった）。pointerEvents 透過、コンテナスタイル分離、GestureHandlerRootView 追加（03c9375）。Sonnet フレッシュ監査 + codex レビュー済み
   - `npx expo export --platform ios` でバンドルコンパイル成功を確認（実機は未確認のまま）
 - **2026-07-11〜12**: dev build を実機で起動し MVP の動作確認済み。GitHub Pages 公開 + 連絡先メール（hibicam.app@gmail.com）反映完了
+- **2026-10-08〜09**: 検証端末に iPhone 17（無印・6.3インチ）を追加。`eas device:create` で UDID 登録（`00008150-00163C580C83C01C`）→ 登録前に走らせた dev build のプロファイルに UDID が入らず「整合性を確認できなかった」エラー → `eas build:resign` で再署名して解決・インストール済み。ストア用スクショは [openscrgen.app](https://openscrgen.app/) で合成する方式に変更済み（`store-assets/README.md` 参照。iPhone 17 実機スクショ 1206×2622 を素材にする）
 - **2026-07-13（v1.0 スコープ拡張、dd62b15 で push 済み）**: ユーザー要望により初回提出前に**シリーズ機能**（複数の定点観測を並行運用、series.json + photos/<seriesId>/、切替チップ・Picker/Form モーダル・前回撮影日時と場所ラベルのオーバーレイ表示）と**初回オンボーディング**（1枚・シリーズ名入力・完了後に権限リクエスト）を追加。Plan 設計 → codex 計画レビュー → Sonnet 3並列実装 → codex 実装レビュー（重大2件含む7件）→ 修正反映まで完了。lint / expo export 検証済み。**新機能の実機 E2E は未実施**。Android 布石として recordAudioAndroid:false + RECORD_AUDIO 除去も実施
 
 ## 変更ファイル
