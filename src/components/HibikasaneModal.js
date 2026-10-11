@@ -73,6 +73,7 @@ export default function HibikasaneModal({
 function HibikasaneSession({ onClose, onSaved, photos, seriesId, seriesName }) {
   const shotRef = useRef(null);
   const abortedRef = useRef(false);
+  const busyRef = useRef(false);
   const [template, setTemplate] = useState('scrap');
   const [settledMap, setSettledMap] = useState({});
   const [timedOut, setTimedOut] = useState(false);
@@ -86,17 +87,20 @@ function HibikasaneSession({ onClose, onSaved, photos, seriesId, seriesName }) {
   const screenWidth = Dimensions.get('window').width;
   const previewScale = Math.min(1, (screenWidth - 24) / Math.max(canvasWidth, 1));
 
-  // Image sources never change across template switches, so a uri-keyed map
-  // stays correct even though the <Image> elements remount per template.
-  const settledValues = picked.map(photo => settledMap[photo.uri]);
+  // The <Image> elements remount on every template switch, so loading is
+  // tracked per template:uri — the buttons re-disable until the newly
+  // mounted images have actually drawn (prevents capturing gray placeholders).
+  const keyOf = uri => `${template}:${uri}`;
+  const settledValues = picked.map(photo => settledMap[keyOf(photo.uri)]);
   const allSettled = picked.length > 0 && settledValues.every(Boolean);
   const anyFailed = settledValues.includes('error');
 
   useEffect(() => {
     if (allSettled) return undefined;
+    setTimedOut(false);
     const timer = setTimeout(() => setTimedOut(true), LOAD_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [allSettled]);
+  }, [allSettled, template]);
 
   useEffect(() => {
     if (abortedRef.current) return;
@@ -111,39 +115,53 @@ function HibikasaneSession({ onClose, onSaved, photos, seriesId, seriesName }) {
     captureRef(shotRef, { format: 'jpg', quality: 0.9, result: 'tmpfile', pixelRatio: 2 });
 
   const handleSave = async () => {
-    if (!allSettled || busy) return;
+    if (!allSettled || busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy('save');
     try {
       const uri = await capture();
       await saveHibikasaneImage(seriesId, uri);
-      if (onSaved) onSaved();
-      onClose();
     } catch (error) {
       console.error('Error saving hibikasane image:', error);
       Alert.alert('エラー', '保存に失敗しました。もう一度お試しください。');
+      busyRef.current = false;
       setBusy(null);
+      return;
     }
+    // Saved successfully: notify/close outside the try so a callback error
+    // can never read as a failed save (and never prompts a duplicate save).
+    if (onSaved) onSaved();
+    onClose();
   };
 
   const handleShare = async () => {
-    if (!allSettled || busy) return;
+    if (!allSettled || busy || busyRef.current) return;
+    busyRef.current = true;
     setBusy('share');
+    let uri = null;
     try {
-      const uri = await capture();
+      uri = await capture();
       await Share.share({ url: ensureFileUri(uri) });
-      // The share extension may still read the tmp file after the sheet
-      // closes, so clean it up after a generous delay.
-      setTimeout(() => releaseCapture(uri), 10000);
     } catch (error) {
       console.error('Error sharing hibikasane image:', error);
       Alert.alert('エラー', '共有に失敗しました。もう一度お試しください。');
     } finally {
+      if (uri) {
+        // The share extension may still read the tmp file after the sheet
+        // closes, so clean it up after a generous delay.
+        const capturedUri = uri;
+        setTimeout(() => releaseCapture(capturedUri), 10000);
+      }
+      busyRef.current = false;
       setBusy(null);
     }
   };
 
   const markSettled = (uri, value) =>
-    setSettledMap(map => (map[uri] === 'ok' ? map : { ...map, [uri]: value }));
+    setSettledMap(map => {
+      const key = keyOf(uri);
+      return map[key] === 'ok' ? map : { ...map, [key]: value };
+    });
 
   const isFilm = template === 'film';
   const isScrap = template === 'scrap';
@@ -317,7 +335,8 @@ const styles = StyleSheet.create({
   canvasBase: {
     paddingTop: 22,
     paddingBottom: 16,
-    borderRadius: 4,
+    // No borderRadius: JPEG has no alpha, so rounded corners would render
+    // as black wedges in the captured file (visible on light backgrounds).
     alignItems: 'center',
   },
   titleBase: {
