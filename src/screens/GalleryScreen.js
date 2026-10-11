@@ -16,6 +16,7 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useSeries } from '../context/SeriesContext';
 import { listSeriesPhotos, deletePhoto, formatCapturedAt } from '../lib/photoLib';
+import HibikasaneModal from '../components/HibikasaneModal';
 
 const PRIVACY_POLICY_URL = 'https://rossoandoy.github.io/GhostCam/';
 
@@ -23,6 +24,7 @@ export default function GalleryScreen({ navigation }) {
   const { status, activeSeries } = useSeries();
   const [photos, setPhotos] = useState([]);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [hibikasaneVisible, setHibikasaneVisible] = useState(false);
   const isMountedRef = useRef(false);
 
   useEffect(() => {
@@ -188,6 +190,22 @@ export default function GalleryScreen({ navigation }) {
         </View>
       )}
 
+      {isReady && photos.length >= 2 && (
+        <TouchableOpacity
+          style={styles.hibikasaneButton}
+          onPress={() => setHibikasaneVisible(true)}
+        >
+          <Text style={styles.hibikasaneButtonText}>ヒビカサネをつくる</Text>
+        </TouchableOpacity>
+      )}
+
+      <HibikasaneModal
+        visible={hibikasaneVisible}
+        onClose={() => setHibikasaneVisible(false)}
+        photos={photos}
+        seriesName={activeSeries?.name ?? ''}
+      />
+
       <Modal
         visible={!!selectedPhoto}
         animationType="fade"
@@ -280,6 +298,25 @@ const styles = StyleSheet.create({
   },
   gridContainer: {
     flexGrow: 1,
+    paddingBottom: 96,
+  },
+  hibikasaneButton: {
+    position: 'absolute',
+    bottom: 36,
+    alignSelf: 'center',
+    backgroundColor: '#0f5132',
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  hibikasaneButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
   gridItem: {
     margin: 0,

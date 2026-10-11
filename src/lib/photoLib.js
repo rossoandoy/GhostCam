@@ -24,6 +24,16 @@ export function timestampFromFilename(filename) {
   return Number.isNaN(value) ? null : value;
 }
 
+export function formatCapturedDate(ms) {
+  if (ms === null || ms === undefined) {
+    return '';
+  }
+
+  const date = new Date(ms);
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())}`;
+}
+
 export function formatCapturedAt(ms) {
   if (ms === null || ms === undefined) {
     return '';
