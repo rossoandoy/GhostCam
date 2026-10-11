@@ -1,11 +1,25 @@
-import * as FileSystem from 'expo-file-system/legacy';
+import { File, Directory, Paths } from 'expo-file-system';
 
-const STORE_PATH = FileSystem.documentDirectory + 'series.json';
-const STORE_BAK_PATH = STORE_PATH + '.bak';
-const PHOTOS_ROOT = FileSystem.documentDirectory + 'photos/';
+const STORE_NAME = 'series.json';
+const STORE_BAK_NAME = STORE_NAME + '.bak';
+const PHOTOS_DIR_NAME = 'photos';
 const DEFAULT_SERIES_NAME = 'マイシリーズ';
 const MAX_TEXT_LENGTH = 30;
 const SERIES_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+// File/Directory instances mutate their `uri` when moved, so always build a
+// fresh instance per operation instead of sharing module-level singletons.
+function storeFile() {
+  return new File(Paths.document, STORE_NAME);
+}
+
+function storeBakFile() {
+  return new File(Paths.document, STORE_BAK_NAME);
+}
+
+function photosRootDir() {
+  return new Directory(Paths.document, PHOTOS_DIR_NAME);
+}
 
 export function generateSeriesId() {
   return 's_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
@@ -117,78 +131,121 @@ export function normalizeStore(raw) {
 }
 
 export async function saveStoreAsync(store) {
-  const tmpPath = `${STORE_PATH}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
-  await FileSystem.writeAsStringAsync(tmpPath, JSON.stringify(normalizeStore(store)));
-
-  const current = await FileSystem.getInfoAsync(STORE_PATH);
-  if (current.exists) {
-    await FileSystem.deleteAsync(STORE_BAK_PATH, { idempotent: true });
-    await FileSystem.moveAsync({ from: STORE_PATH, to: STORE_BAK_PATH });
-  }
+  const tmpName = `${STORE_NAME}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  const tmp = new File(Paths.document, tmpName);
 
   try {
-    await FileSystem.moveAsync({ from: tmpPath, to: STORE_PATH });
-    await FileSystem.deleteAsync(STORE_BAK_PATH, { idempotent: true });
-  } catch (error) {
-    // Restore the previous store so a failed swap never leaves us without
-    // a readable series.json (which would look like data loss on next launch).
-    const bak = await FileSystem.getInfoAsync(STORE_BAK_PATH);
-    if (bak.exists) {
-      await FileSystem.moveAsync({ from: STORE_BAK_PATH, to: STORE_PATH });
+    tmp.write(JSON.stringify(normalizeStore(store)));
+
+    const current = storeFile();
+    if (current.exists) {
+      const bak = storeBakFile();
+      if (bak.exists) {
+        bak.delete();
+      }
+      current.move(bak);
     }
-    throw error;
+
+    try {
+      tmp.move(storeFile());
+    } catch (error) {
+      // Restore the previous store so a failed swap never leaves us without
+      // a readable series.json (which would look like data loss on next launch).
+      const bak = storeBakFile();
+      if (bak.exists) {
+        bak.move(storeFile());
+      }
+      throw error;
+    }
+
+    // The swap succeeded; failing to drop the stale .bak must not fail the
+    // save (and must not trigger the restore path above).
+    try {
+      const bak = storeBakFile();
+      if (bak.exists) {
+        bak.delete();
+      }
+    } catch {
+      // Best-effort cleanup.
+    }
   } finally {
-    await FileSystem.deleteAsync(tmpPath, { idempotent: true }).catch(() => {});
+    // `tmp.uri` is rewritten by a successful move, so re-resolve by name
+    // before cleaning up — otherwise we would delete the store we just wrote.
+    try {
+      const leftover = new File(Paths.document, tmpName);
+      if (leftover.exists) {
+        leftover.delete();
+      }
+    } catch {
+      // Cleanup is best-effort.
+    }
   }
+}
+
+async function readAndRepairAsync(file) {
+  const raw = await file.text();
+  const parsed = JSON.parse(raw);
+  const { store, repaired } = normalizeStoreWithMeta(parsed);
+  if (repaired) {
+    // Persist the repair immediately; otherwise a valid-but-corrupt store
+    // would regenerate a fresh default series (new id) on every launch,
+    // orphaning any photos already saved under the previous id.
+    await saveStoreAsync(store).catch(error => {
+      console.warn('[seriesStore] Failed to persist repaired store:', error);
+    });
+  }
+  return store;
 }
 
 export async function loadStoreAsync() {
   try {
-    const raw = await FileSystem.readAsStringAsync(STORE_PATH);
-    const parsed = JSON.parse(raw);
-    const { store, repaired } = normalizeStoreWithMeta(parsed);
-    if (repaired) {
-      // Persist the repair immediately; otherwise a valid-but-corrupt store
-      // would regenerate a fresh default series (new id) on every launch,
-      // orphaning any photos already saved under the previous id.
-      await saveStoreAsync(store).catch(error => {
-        console.warn('[seriesStore] Failed to persist repaired store:', error);
-      });
-    }
-    return store;
+    return await readAndRepairAsync(storeFile());
   } catch (error) {
-    console.warn('[seriesStore] Failed to load store, initializing default:', error);
-    const store = normalizeStore({});
-    await saveStoreAsync(store);
-    return store;
+    console.warn('[seriesStore] Failed to load store:', error);
   }
+
+  // A crash between the swap steps in saveStoreAsync can leave only the
+  // backup behind. Recover from it instead of generating a default store
+  // (which would mint a new series id and orphan the existing photos).
+  try {
+    const bak = storeBakFile();
+    if (bak.exists) {
+      console.warn('[seriesStore] Recovering store from backup');
+      const store = await readAndRepairAsync(bak);
+      await saveStoreAsync(store);
+      return store;
+    }
+  } catch (error) {
+    console.warn('[seriesStore] Failed to recover store from backup:', error);
+  }
+
+  const store = normalizeStore({});
+  await saveStoreAsync(store);
+  return store;
 }
 
 export async function migrateLegacyPhotosAsync(store, targetSeriesId) {
   try {
-    const rootInfo = await FileSystem.getInfoAsync(PHOTOS_ROOT);
-    if (!rootInfo.exists) {
+    const root = photosRootDir();
+    if (!root.exists) {
       return { ...store, legacyPhotosMigratedAt: Date.now() };
     }
 
-    const entries = await FileSystem.readDirectoryAsync(PHOTOS_ROOT);
-    const legacyJpgs = entries.filter(name => name.endsWith('.jpg'));
+    const legacyJpgs = root
+      .list()
+      .filter(entry => entry instanceof File && entry.name.endsWith('.jpg'));
 
     if (legacyJpgs.length === 0) {
       return { ...store, legacyPhotosMigratedAt: Date.now() };
     }
 
-    const targetDir = PHOTOS_ROOT + targetSeriesId + '/';
-    const targetDirInfo = await FileSystem.getInfoAsync(targetDir);
-    if (!targetDirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(targetDir, { intermediates: true });
+    const targetDir = new Directory(root, targetSeriesId);
+    if (!targetDir.exists) {
+      targetDir.create({ intermediates: true });
     }
 
-    for (const filename of legacyJpgs) {
-      await FileSystem.moveAsync({
-        from: PHOTOS_ROOT + filename,
-        to: targetDir + filename,
-      });
+    for (const file of legacyJpgs) {
+      file.move(targetDir);
     }
 
     return { ...store, legacyPhotosMigratedAt: Date.now() };

@@ -1,16 +1,16 @@
-import * as FileSystem from 'expo-file-system/legacy';
+import { File, Directory, Paths } from 'expo-file-system';
 
-const PHOTOS_ROOT = FileSystem.documentDirectory + 'photos/';
+const PHOTOS_DIR_NAME = 'photos';
 
+// Instances mutate their `uri` when moved, so build fresh ones per operation.
 function seriesDir(seriesId) {
-  return PHOTOS_ROOT + seriesId + '/';
+  return new Directory(Paths.document, PHOTOS_DIR_NAME, seriesId);
 }
 
 async function ensureSeriesDirAsync(seriesId) {
   const dir = seriesDir(seriesId);
-  const info = await FileSystem.getInfoAsync(dir);
-  if (!info.exists) {
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  if (!dir.exists) {
+    dir.create({ intermediates: true });
   }
   return dir;
 }
@@ -42,14 +42,16 @@ export function formatCapturedAt(ms) {
 
 export async function listSeriesPhotos(seriesId) {
   const dir = await ensureSeriesDirAsync(seriesId);
-  const entries = await FileSystem.readDirectoryAsync(dir);
-  const filenames = entries.filter(name => name.endsWith('.jpg')).sort().reverse();
 
-  return filenames.map(filename => ({
-    uri: dir + filename,
-    filename,
-    capturedAt: timestampFromFilename(filename),
-  }));
+  return dir
+    .list()
+    .filter(entry => entry instanceof File && entry.name.endsWith('.jpg'))
+    .sort((a, b) => (a.name < b.name ? 1 : -1))
+    .map(file => ({
+      uri: file.uri,
+      filename: file.name,
+      capturedAt: timestampFromFilename(file.name),
+    }));
 }
 
 export async function getLatestSeriesPhoto(seriesId) {
@@ -60,13 +62,16 @@ export async function getLatestSeriesPhoto(seriesId) {
 export async function saveCameraPhoto(seriesId, tempUri) {
   const dir = await ensureSeriesDirAsync(seriesId);
   const filename = `photo_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.jpg`;
-  const uri = dir + filename;
 
-  await FileSystem.moveAsync({ from: tempUri, to: uri });
+  const file = new File(tempUri);
+  file.move(new File(dir, filename));
 
-  return { uri, filename, capturedAt: timestampFromFilename(filename) };
+  return { uri: file.uri, filename, capturedAt: timestampFromFilename(filename) };
 }
 
 export async function deletePhoto(uri) {
-  await FileSystem.deleteAsync(uri, { idempotent: true });
+  const file = new File(uri);
+  if (file.exists) {
+    file.delete();
+  }
 }
