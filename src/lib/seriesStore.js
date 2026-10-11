@@ -133,32 +133,41 @@ export function normalizeStore(raw) {
 export async function saveStoreAsync(store) {
   const tmpName = `${STORE_NAME}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
   const tmp = new File(Paths.document, tmpName);
-  tmp.create();
-  tmp.write(JSON.stringify(normalizeStore(store)));
-
-  const current = storeFile();
-  if (current.exists) {
-    const bak = storeBakFile();
-    if (bak.exists) {
-      bak.delete();
-    }
-    current.move(bak);
-  }
 
   try {
-    tmp.move(storeFile());
-    const bak = storeBakFile();
-    if (bak.exists) {
-      bak.delete();
+    tmp.write(JSON.stringify(normalizeStore(store)));
+
+    const current = storeFile();
+    if (current.exists) {
+      const bak = storeBakFile();
+      if (bak.exists) {
+        bak.delete();
+      }
+      current.move(bak);
     }
-  } catch (error) {
-    // Restore the previous store so a failed swap never leaves us without
-    // a readable series.json (which would look like data loss on next launch).
-    const bak = storeBakFile();
-    if (bak.exists) {
-      bak.move(storeFile());
+
+    try {
+      tmp.move(storeFile());
+    } catch (error) {
+      // Restore the previous store so a failed swap never leaves us without
+      // a readable series.json (which would look like data loss on next launch).
+      const bak = storeBakFile();
+      if (bak.exists) {
+        bak.move(storeFile());
+      }
+      throw error;
     }
-    throw error;
+
+    // The swap succeeded; failing to drop the stale .bak must not fail the
+    // save (and must not trigger the restore path above).
+    try {
+      const bak = storeBakFile();
+      if (bak.exists) {
+        bak.delete();
+      }
+    } catch {
+      // Best-effort cleanup.
+    }
   } finally {
     // `tmp.uri` is rewritten by a successful move, so re-resolve by name
     // before cleaning up — otherwise we would delete the store we just wrote.
