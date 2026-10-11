@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>cleaner</title></head>
+<body>
+<script>
+// Cleans a raw iPhone 17 screenshot (1206x2622) for store use:
+// - crops off the status bar strip (time/battery/Dynamic Island)
+// - removes the dev-build-only Expo gear bubble (fill or clone patch)
+// - optionally repaints the gallery "プライバシー" label (wrap bug in old build)
+// Returns a PNG data URL.
+async function cleanImage(cfg) {
+  const img = new Image();
+  img.src = cfg.src;
+  await img.decode();
+
+  const CROP = cfg.cropTop ?? 150;
+  const W = img.naturalWidth;
+  const H = img.naturalHeight - CROP;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(img, 0, -CROP);
+
+  // Gear bubble patch. Coordinates are in original (uncropped) space.
+  const g = cfg.gear;
+  if (g) {
+    const cy = g.cy - CROP;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(g.cx, cy, g.r, 0, Math.PI * 2);
+    ctx.clip();
+    if (g.mode === 'fill') {
+      ctx.fillStyle = g.color || '#000';
+      ctx.fillRect(g.cx - g.r, cy - g.r, g.r * 2, g.r * 2);
+      ctx.restore();
+    } else {
+      // clone: cover the bubble with a shifted copy of the image, faded out
+      // toward the circle edge (radial alpha mask) so tone shifts blend in.
+      ctx.restore();
+      const t = document.createElement('canvas');
+      t.width = g.r * 2;
+      t.height = g.r * 2;
+      const tc = t.getContext('2d');
+      tc.drawImage(img, -(g.cx - g.r) + (g.dx || 0), -(g.cy - g.r) + (g.dy || 0));
+      const grad = tc.createRadialGradient(g.r, g.r, 0, g.r, g.r, g.r);
+      grad.addColorStop(0, 'rgba(0,0,0,1)');
+      grad.addColorStop(g.feather ?? 0.72, 'rgba(0,0,0,1)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      tc.globalCompositeOperation = 'destination-in';
+      tc.fillStyle = grad;
+      tc.fillRect(0, 0, t.width, t.height);
+      ctx.drawImage(t, g.cx - g.r, cy - g.r);
+    }
+  }
+
+  // Optional black-out rectangles + repainted label (gallery header fix)
+  if (cfg.blackRect) {
+    const r = cfg.blackRect;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(r.x, r.y - CROP, r.w, r.h);
+  }
+  if (cfg.label) {
+    const l = cfg.label;
+    ctx.fillStyle = l.color || '#999';
+    ctx.font = `${l.size}px "Hiragino Sans", sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(l.text, l.x, l.y - CROP);
+  }
+
+  return c.toDataURL('image/png');
+}
+</script>
+</body>
+</html>
