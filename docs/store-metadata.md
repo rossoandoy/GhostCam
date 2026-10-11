@@ -146,98 +146,65 @@
 
 ## 7. 審査ノート（Notes for Review）
 
-App Store Connect の「App Review Information」→「Notes」欄に、英語で以下を貼り付けてください。
+App Store Connect の「App Review Information」→「Notes」欄に、英語で以下を貼り付けてください。（ASC の上限 4000 字に収まる 3,189 字版。2026-10-11 短縮）
 
 ```
-HOW TO TEST THE CORE FEATURES (Onboarding, Series, "Ghost" overlay)
+HOW TO TEST THE CORE FEATURES
 
-1. Launch the app. On first launch you'll see a one-screen onboarding card
-   introducing the app, with a text field for naming your first "series"
-   (a named, ongoing fixed-point observation, e.g. "Child's growth" or
-   "Home garden") pre-filled with a default name. Tap "はじめる" (Start)
-   to continue.
-2. Grant camera access when prompted (this is the only permission the app
-   requests). The camera screen then opens in full screen, with a chip at
-   the top showing the active series name.
-3. Tap the shutter button once to take a photo. The photo is saved to the
-   app's local, sandboxed document storage only, inside a folder scoped to
-   the current series.
+1. Launch the app. First launch shows a one-screen onboarding with a text
+   field for naming your first "series" (a named fixed-point observation,
+   e.g. "Child's growth"). Tap 「はじめる」 (Start).
+2. Grant camera access when prompted (the only permission requested). The
+   full-screen camera opens, with a chip at the top showing the active
+   series name.
+3. Tap the shutter once. The photo is saved only to the app's sandboxed
+   local storage, in a folder scoped to the current series.
 4. The photo you just took now appears as a semi-transparent "ghost"
-   overlay on top of the live camera preview, along with a caption showing
-   when it was taken and the series' optional location label. This is the
-   app's core feature: it lets the user line up the next shot with the
-   previous one, for repeat/fixed-point photography (e.g. tracking plant
-   growth, body changes from exercise, home renovation progress, room
-   tidying before/after, or a child's growth over time).
-5. The overlay opacity can be adjusted between 15%, 30%, and 50% using the
-   opacity control on the camera screen.
-6. Tap the series chip at the top of the camera screen to open the series
-   picker. Tap "＋ 新しいシリーズ" (+ New series) to create another series
-   (name + optional location label), or tap an existing series to switch
-   to it — the ghost overlay and gallery update to that series' own
-   photos. Tap the "編集" (Edit) button on a series row (or long-press
-   the row) to edit its name/location label.
-7. Tap the gallery thumbnail (bottom-right of the camera screen) to open
-   the gallery. It shows only the photos of the currently active series,
-   listed newest-first in a 3-column grid.
-8. Tap any photo in the gallery to view it full-screen. From full-screen
-   view you can Share the photo (via the system share sheet) or Delete it.
-   Taking a new photo after deleting will again update the ghost overlay.
+   overlay on the live preview, with a caption showing when it was taken
+   and the series' optional location label. This is the core feature: it
+   lets the user line up the next shot with the previous one for repeat /
+   fixed-point photography (plant growth, body changes from exercise,
+   renovation progress, a child's growth, etc.).
+5. Overlay opacity is adjustable (15% / 30% / 50%) on the camera screen.
+6. Tap the series chip to open the series picker. "+ 新しいシリーズ" creates
+   another series (name + optional location label); tapping an existing
+   one switches to it, and the ghost overlay and gallery switch to that
+   series' own photos. The "編集" (Edit) button on each row (or long-press)
+   edits its name/label.
+7. The gallery thumbnail (bottom right) opens a 3-column, newest-first
+   grid showing only the active series' photos.
+8. Tap a photo to view it full screen, where you can Share (system share
+   sheet) or Delete it.
 
-WHY THIS APP MEETS GUIDELINE 4.2 (MINIMUM FUNCTIONALITY)
+WHY THIS MEETS GUIDELINE 4.2 (MINIMUM FUNCTIONALITY)
 
-HibiCam is a focused utility for a specific, well-established photography
-technique: repeat photography / fixed-point observation, i.e. taking a
-series of photos from the exact same position over time to visualize
-gradual change. This technique is normally hard to do by hand (aligning
-angle, distance, and framing from memory), and the app's ghost-overlay
-feature is the tool that solves that specific problem by showing the
-previous photo, at an adjustable opacity, directly in the live camera
-preview so the user can match the framing before shooting.
-
-Beyond a bare camera pass-through, the app includes a complete, coherent
-feature set built around this single use case:
-- Guided onboarding that explains the concept and collects the first
-  series name before any camera permission is requested.
-- Series management: users can run multiple independent fixed-point
-  observations in parallel (e.g. a child's growth and a home garden),
-  each with its own name and an optional, manually-entered location
-  label, switchable at any time via a chip on the camera screen.
-- Per-series ghost overlay of the previously taken photo for that series,
-  with 3 selectable opacity levels (15% / 30% / 50%) and an on-screen
-  caption showing when and (optionally) where it was taken.
-- Automatic update of the ghost reference photo after every new shot,
-  scoped to the active series.
-- A dedicated gallery (3-column grid, newest first) scoped to the active
-  series, so records for different subjects never mix.
-- Full-screen photo viewer with Share and Delete actions.
-
-We believe this multi-series, guided fixed-point-observation workflow
-qualifies as well more than "a simple website wrapped in an app" or a
-bare-bones camera clone, and instead is a small, complete utility built
-specifically around the fixed-point observation use case.
+HibiCam is a focused utility for repeat photography / fixed-point
+observation: taking photos from the same position over time to visualize
+gradual change. Doing this by hand (matching angle, distance and framing
+from memory) is hard; the ghost overlay solves exactly that by showing
+the previous photo at adjustable opacity directly in the live preview.
+Beyond a bare camera, the app offers a complete workflow built around
+this one use case: guided onboarding; multiple independent series run in
+parallel, each with its own name, optional location label, per-series
+ghost overlay and per-series gallery; automatic update of the ghost
+reference photo after every shot; and a full-screen viewer with
+Share/Delete. We believe this is a small but complete utility, not a
+bare-bones camera clone or a wrapped website.
 
 DATA COLLECTION / ACCOUNTS
 
-- The app requires no account, sign-up, or login of any kind.
-- The app collects zero user data. There is no analytics SDK and no
-  advertising SDK. All core features work fully offline with no network
-  communication. The only outbound action is the "プライバシー" (Privacy)
-  link in the gallery header, which opens our privacy policy page in the
-  external browser when the user taps it.
-- Photos taken by the user are stored only in the app's private,
-  sandboxed local document storage on the device. They are never
-  uploaded, transmitted, or synced anywhere by the app itself. The only
-  way a photo leaves the device is if the user explicitly taps "Share"
-  and picks a destination via the system share sheet — a normal iOS
-  share action initiated entirely by the user.
-- Series names and location labels are freeform text the user types in
-  by hand and are stored only in the app's local document storage
-  (series.json). The app does not use GPS, Core Location, or any other
-  location API — the "location label" is just a user-chosen text tag
-  (e.g. "Living room"), not a geographic coordinate.
-- The only permission requested is Camera access, used solely to take the
-  fixed-point observation photos described above.
+- No account, sign-up, or login of any kind.
+- Zero data collection: no analytics or ad SDKs, fully offline. The only
+  outbound action is the "プライバシー" (Privacy) link in the gallery
+  header, which opens our privacy policy page in the external browser.
+- Photos are stored only in the app's sandboxed local storage and are
+  never uploaded or synced. A photo leaves the device only when the user
+  explicitly taps Share and picks a destination in the system share
+  sheet.
+- Series names and location labels are freeform text typed by the user,
+  stored locally (series.json). No GPS / Core Location is used - the
+  "location label" is just a user-chosen text tag (e.g. "Living room").
+- The only permission requested is Camera.
 
 Thank you for reviewing HibiCam.
 ```
