@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSeries } from '../context/SeriesContext';
-import { listSeriesPhotos, deletePhoto } from '../lib/photoLib';
+import { listSeriesPhotos, deletePhoto, formatCapturedAt } from '../lib/photoLib';
 
 const PRIVACY_POLICY_URL = 'https://rossoandoy.github.io/GhostCam/';
 
@@ -125,6 +125,12 @@ export default function GalleryScreen({ navigation }) {
 
   const isReady = status === 'ready' && !!activeSeries;
 
+  const viewerCaption = selectedPhoto
+    ? [formatCapturedAt(selectedPhoto.capturedAt), activeSeries?.locationLabel]
+        .filter(Boolean)
+        .join(' ・ ')
+    : '';
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -190,11 +196,18 @@ export default function GalleryScreen({ navigation }) {
       >
         <SafeAreaView style={styles.viewerContainer}>
           {selectedPhoto && (
-            <Image
-              source={{ uri: selectedPhoto.uri }}
-              style={styles.viewerImage}
-              resizeMode="contain"
-            />
+            <>
+              {!!viewerCaption && (
+                <Text style={styles.viewerCaption} numberOfLines={1}>
+                  {viewerCaption}
+                </Text>
+              )}
+              <Image
+                source={{ uri: selectedPhoto.uri }}
+                style={styles.viewerImage}
+                resizeMode="contain"
+              />
+            </>
           )}
 
           <View style={styles.viewerActions}>
@@ -294,6 +307,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
     justifyContent: 'center',
+  },
+  viewerCaption: {
+    color: 'rgba(255, 255, 255, 0.75)',
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
   viewerImage: {
     flex: 1,
