@@ -24,8 +24,8 @@ v1.0 の公開工程は `RELEASE_PLAYBOOK.md`、現状は `HANDOFF.md`、コー�
 - PR 必須事項:
   - 本文に `Closes #<番号>`、変更概要、**テスト計画**（実機確認したこと/していないこと）
   - `npm run lint` パス + `npx expo export --platform ios` でバンドル成功
-  - **codex レビュー**（CLAUDE.md のコマンド）を merge 前に実施し、結果を PR コメントに残す
-- merge は **squash merge**（履歴1 Issue = 1 コミットに保つ）。merge は本人の確認後
+  - **AI フレッシュレビュー**（実装に関与していない別エージェントによるレビュー）を merge 前に実施し、結果を PR コメントに残す
+- merge は **squash merge**（履歴1 Issue = 1 コミットに保つ）。アプリ挙動に触れる PR の merge は本人の実機確認後。**文書・設定のみの chore PR は Issue 省略可・AI が merge してよい**
 - UI に触る変更は PR にスクショ/画面録画を貼る（dev build + Metro で確認）
 
 ## 3. リリースサイクル（v1.1 以降の毎回の型）
