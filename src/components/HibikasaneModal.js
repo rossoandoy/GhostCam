@@ -19,16 +19,27 @@ import {
 } from '../lib/hibikasane';
 import { formatCapturedDate } from '../lib/photoLib';
 
-// Canvas is laid out at a fixed pixel size and captured as-is; on screen it
-// is only visually scaled down (transform does not affect capture size).
+// The canvas is laid out at a fixed pixel size and captured as-is when the
+// user taps 保存/共有; on screen it is only visually scaled down (transform
+// does not affect the captured size). Because capture happens on a user tap,
+// the view is always on screen by then — no presentation-timing guards needed.
 const PHOTO_W = 240;
 const PHOTO_H = 320;
-const CARD_PAD = 10;
-const CARD_W = PHOTO_W + CARD_PAD * 2;
-const GAP = 2;
-const PAD = 26;
 const LOAD_TIMEOUT_MS = 5000;
 const ROTATIONS = ['-2.2deg', '1.8deg', '-1.6deg', '2.4deg'];
+
+export const HIBIKASANE_TEMPLATES = [
+  { id: 'scrap', label: 'スクラップ' },
+  { id: 'minimal', label: 'シンプル' },
+  { id: 'film', label: 'フィルム' },
+];
+
+// Per-template layout metrics used for canvas width calculation.
+const METRICS = {
+  scrap: { cellW: PHOTO_W + 20, gap: 2, pad: 26 },
+  minimal: { cellW: PHOTO_W, gap: 6, pad: 28 },
+  film: { cellW: PHOTO_W, gap: 4, pad: 26 },
+};
 
 function ensureFileUri(uri) {
   return uri.startsWith('file://') ? uri : `file://${uri}`;
@@ -43,26 +54,11 @@ export default function HibikasaneModal({
   seriesName,
 }) {
   // The session content is mounted only while visible, so every open starts
-  // from fresh state (no reset effects, no stale captures on re-open).
-  const [shown, setShown] = useState(false);
-
-  useEffect(() => {
-    if (!visible) {
-      setShown(false);
-    }
-  }, [visible]);
-
+  // from fresh state.
   return (
-    <Modal
-      visible={visible}
-      animationType="fade"
-      transparent
-      onRequestClose={onClose}
-      onShow={() => setShown(true)}
-    >
+    <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
       {visible && (
         <HibikasaneSession
-          shown={shown}
           onClose={onClose}
           onSaved={onSaved}
           photos={photos}
@@ -74,206 +70,242 @@ export default function HibikasaneModal({
   );
 }
 
-function HibikasaneSession({ shown, onClose, onSaved, photos, seriesId, seriesName }) {
+function HibikasaneSession({ onClose, onSaved, photos, seriesId, seriesName }) {
   const shotRef = useRef(null);
-  const capturedOnceRef = useRef(false);
-  const savedRef = useRef(false);
-  const [loadedCount, setLoadedCount] = useState(0);
-  const [failedCount, setFailedCount] = useState(0);
+  const abortedRef = useRef(false);
+  const [template, setTemplate] = useState('scrap');
+  const [settledMap, setSettledMap] = useState({});
   const [timedOut, setTimedOut] = useState(false);
-  const [capturedUri, setCapturedUri] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [busy, setBusy] = useState(null); // null | 'save' | 'share'
 
   const picked = useMemo(() => pickTimelinePhotos(photos), [photos]);
   const rangeLabel = useMemo(() => timelineRangeLabel(picked), [picked]);
 
-  const canvasWidth =
-    PAD * 2 + picked.length * CARD_W + Math.max(0, picked.length - 1) * GAP;
+  const { cellW, gap, pad } = METRICS[template];
+  const canvasWidth = pad * 2 + picked.length * cellW + Math.max(0, picked.length - 1) * gap;
   const screenWidth = Dimensions.get('window').width;
   const previewScale = Math.min(1, (screenWidth - 24) / Math.max(canvasWidth, 1));
 
-  const settledCount = loadedCount + failedCount;
-  const allSettled = picked.length > 0 && settledCount >= picked.length;
+  // Image sources never change across template switches, so a uri-keyed map
+  // stays correct even though the <Image> elements remount per template.
+  const settledValues = picked.map(photo => settledMap[photo.uri]);
+  const allSettled = picked.length > 0 && settledValues.every(Boolean);
+  const anyFailed = settledValues.includes('error');
 
-  // Safety net: never hang forever on a stuck Image load. The timer is
-  // cleared once everything settles, so timedOut cannot flip afterwards.
   useEffect(() => {
     if (allSettled) return undefined;
     const timer = setTimeout(() => setTimedOut(true), LOAD_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [allSettled]);
 
-  // Wait for the Modal's presentation animation (onShow) before capturing:
-  // snapshotting a view that is not on screen yet can produce a blank image.
-  const ready = shown && picked.length > 0 && (allSettled || timedOut);
-
   useEffect(() => {
-    if (!ready || capturedOnceRef.current) return undefined;
-    capturedOnceRef.current = true;
-
-    if (failedCount > 0 || settledCount < picked.length) {
+    if (abortedRef.current) return;
+    if (anyFailed || (timedOut && !allSettled)) {
+      abortedRef.current = true;
       Alert.alert('エラー', '写真の読み込みに失敗しました。もう一度お試しください。');
       onClose();
-      return undefined;
     }
+  }, [anyFailed, timedOut, allSettled, onClose]);
 
-    let cancelled = false;
-    // Give the committed frame one beat to render before snapshotting.
-    const timer = setTimeout(async () => {
-      try {
-        const uri = await captureRef(shotRef, {
-          format: 'jpg',
-          quality: 0.9,
-          result: 'tmpfile',
-          pixelRatio: 2,
-        });
-        if (cancelled) {
-          releaseCapture(uri);
-          return;
-        }
-        setCapturedUri(uri);
-      } catch (error) {
-        console.error('Error creating hibikasane image:', error);
-        if (!cancelled) {
-          Alert.alert('エラー', 'ヒビカサネの作成に失敗しました。もう一度お試しください。');
-          onClose();
-        }
-      }
-    }, 200);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [ready, failedCount, settledCount, picked.length, onClose]);
-
-  // Clean up the tmp capture when the session ends without saving it.
-  // (A delayed release keeps the file readable for an in-flight share sheet.)
-  useEffect(() => {
-    return () => {
-      if (capturedUri && !savedRef.current) {
-        const uri = capturedUri;
-        setTimeout(() => releaseCapture(uri), 10000);
-      }
-    };
-  }, [capturedUri]);
+  const capture = () =>
+    captureRef(shotRef, { format: 'jpg', quality: 0.9, result: 'tmpfile', pixelRatio: 2 });
 
   const handleSave = async () => {
-    if (!capturedUri || saving) return;
-    setSaving(true);
+    if (!allSettled || busy) return;
+    setBusy('save');
     try {
-      await saveHibikasaneImage(seriesId, capturedUri);
-      savedRef.current = true;
+      const uri = await capture();
+      await saveHibikasaneImage(seriesId, uri);
       if (onSaved) onSaved();
       onClose();
     } catch (error) {
       console.error('Error saving hibikasane image:', error);
       Alert.alert('エラー', '保存に失敗しました。もう一度お試しください。');
-    } finally {
-      setSaving(false);
+      setBusy(null);
     }
   };
 
   const handleShare = async () => {
-    if (!capturedUri) return;
+    if (!allSettled || busy) return;
+    setBusy('share');
     try {
-      await Share.share({ url: ensureFileUri(capturedUri) });
+      const uri = await capture();
+      await Share.share({ url: ensureFileUri(uri) });
+      // The share extension may still read the tmp file after the sheet
+      // closes, so clean it up after a generous delay.
+      setTimeout(() => releaseCapture(uri), 10000);
     } catch (error) {
       console.error('Error sharing hibikasane image:', error);
       Alert.alert('エラー', '共有に失敗しました。もう一度お試しください。');
+    } finally {
+      setBusy(null);
     }
   };
 
+  const markSettled = (uri, value) =>
+    setSettledMap(map => (map[uri] === 'ok' ? map : { ...map, [uri]: value }));
+
+  const isFilm = template === 'film';
+  const isScrap = template === 'scrap';
+  const actionsDisabled = !allSettled || !!busy;
+
   return (
     <View style={styles.backdrop}>
-      {capturedUri ? (
-        <>
-          <Image
-            source={{ uri: ensureFileUri(capturedUri) }}
-            style={styles.previewImage}
-            resizeMode="contain"
-          />
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={[styles.primaryButton, saving && styles.buttonDisabled]}
-              onPress={handleSave}
-              disabled={saving}
-            >
-              <Text style={styles.primaryButtonText}>保存する</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.secondaryButton, saving && styles.buttonDisabled]}
-              onPress={handleShare}
-              disabled={saving}
-            >
-              <Text style={styles.secondaryButtonText}>共有</Text>
-            </TouchableOpacity>
+      <View style={{ transform: [{ scale: previewScale }] }}>
+        <View
+          ref={shotRef}
+          collapsable={false}
+          style={[styles.canvasBase, canvasStyles[template], { width: canvasWidth }]}
+        >
+          <Text style={[styles.titleBase, titleStyles[template]]} numberOfLines={1}>
+            {seriesName}
+          </Text>
+          {!!rangeLabel && (
+            <Text style={[styles.rangeBase, rangeStyles[template]]}>{rangeLabel}</Text>
+          )}
+
+          {isFilm && <Sprockets width={canvasWidth - pad * 2} />}
+
+          <View style={[styles.row, isFilm && styles.rowFilm]}>
+            {picked.map((photo, index) => {
+              const isFirst = index === 0;
+              const isLast = index === picked.length - 1;
+              const marginRight = isLast ? 0 : gap;
+
+              if (isScrap) {
+                const tag =
+                  picked.length >= 2 && isFirst ? 'はじまり' : isLast ? 'いま' : ' ';
+                return (
+                  <View
+                    key={photo.uri}
+                    style={[
+                      styles.scrapCard,
+                      { marginRight, transform: [{ rotate: ROTATIONS[index % ROTATIONS.length] }] },
+                    ]}
+                  >
+                    <Text style={[styles.scrapTag, tag === ' ' && styles.tagEmpty]}>{tag}</Text>
+                    <Image
+                      source={{ uri: photo.uri }}
+                      style={styles.photo}
+                      resizeMode="cover"
+                      onLoad={() => markSettled(photo.uri, 'ok')}
+                      onError={() => markSettled(photo.uri, 'error')}
+                    />
+                    <Text style={styles.scrapDate}>{formatCapturedDate(photo.capturedAt)}</Text>
+                  </View>
+                );
+              }
+
+              return (
+                <View key={photo.uri} style={{ marginRight }}>
+                  <Image
+                    source={{ uri: photo.uri }}
+                    style={styles.photo}
+                    resizeMode="cover"
+                    onLoad={() => markSettled(photo.uri, 'ok')}
+                    onError={() => markSettled(photo.uri, 'error')}
+                  />
+                  <Text style={isFilm ? styles.filmDate : styles.minimalDate}>
+                    {formatCapturedDate(photo.capturedAt)}
+                  </Text>
+                </View>
+              );
+            })}
           </View>
-          <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={saving}>
-            <Text style={styles.cancelButtonText}>閉じる</Text>
+
+          {isFilm && <Sprockets width={canvasWidth - pad * 2} />}
+
+          <Text style={[styles.brandBase, brandStyles[template]]}>ヒビカメ — ヒビカサネ</Text>
+        </View>
+      </View>
+
+      <View style={styles.templateRow}>
+        {HIBIKASANE_TEMPLATES.map(item => (
+          <TouchableOpacity
+            key={item.id}
+            style={[styles.templateChip, template === item.id && styles.templateChipActive]}
+            onPress={() => setTemplate(item.id)}
+            disabled={!!busy}
+          >
+            <Text
+              style={[
+                styles.templateChipText,
+                template === item.id && styles.templateChipTextActive,
+              ]}
+            >
+              {item.label}
+            </Text>
           </TouchableOpacity>
-        </>
+        ))}
+      </View>
+
+      {!allSettled ? (
+        <View style={styles.statusRow}>
+          <ActivityIndicator color="#fff" />
+          <Text style={styles.statusText}>よみこみ中…</Text>
+        </View>
       ) : (
-        <>
-          <View style={{ transform: [{ scale: previewScale }] }}>
-            <View
-              ref={shotRef}
-              collapsable={false}
-              style={[styles.canvas, { width: canvasWidth }]}
-            >
-              <Text style={styles.canvasTitle} numberOfLines={1}>
-                {seriesName}
-              </Text>
-              {!!rangeLabel && <Text style={styles.rangeLabel}>{rangeLabel}</Text>}
-              <View style={styles.row}>
-                {picked.map((photo, index) => {
-                  const isFirst = index === 0;
-                  const isLast = index === picked.length - 1;
-                  const tag =
-                    picked.length >= 2 && isFirst ? 'はじまり' : isLast ? 'いま' : ' ';
-                  return (
-                    <View
-                      key={photo.uri}
-                      style={[
-                        styles.card,
-                        { transform: [{ rotate: ROTATIONS[index % ROTATIONS.length] }] },
-                        !isLast && styles.cardGap,
-                      ]}
-                    >
-                      <Text style={[styles.cardTag, tag === ' ' && styles.cardTagEmpty]}>
-                        {tag}
-                      </Text>
-                      <Image
-                        source={{ uri: photo.uri }}
-                        style={styles.photo}
-                        resizeMode="cover"
-                        onLoad={() => setLoadedCount(count => count + 1)}
-                        onError={() => setFailedCount(count => count + 1)}
-                      />
-                      <Text style={styles.cardDate}>
-                        {formatCapturedDate(photo.capturedAt)}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-              <Text style={styles.brand}>ヒビカメ — ヒビカサネ</Text>
-            </View>
-          </View>
-
-          <View style={styles.statusRow}>
-            <ActivityIndicator color="#fff" />
-            <Text style={styles.statusText}>ヒビカサネを作成中…</Text>
-          </View>
-
-          <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-            <Text style={styles.cancelButtonText}>キャンセル</Text>
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[styles.primaryButton, actionsDisabled && styles.buttonDisabled]}
+            onPress={handleSave}
+            disabled={actionsDisabled}
+          >
+            <Text style={styles.primaryButtonText}>
+              {busy === 'save' ? '保存中…' : '保存する'}
+            </Text>
           </TouchableOpacity>
-        </>
+          <TouchableOpacity
+            style={[styles.secondaryButton, actionsDisabled && styles.buttonDisabled]}
+            onPress={handleShare}
+            disabled={actionsDisabled}
+          >
+            <Text style={styles.secondaryButtonText}>共有</Text>
+          </TouchableOpacity>
+        </View>
       )}
+
+      <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={!!busy}>
+        <Text style={styles.cancelButtonText}>閉じる</Text>
+      </TouchableOpacity>
     </View>
   );
 }
+
+function Sprockets({ width }) {
+  const count = Math.max(4, Math.floor(width / 48));
+  return (
+    <View style={[styles.sprocketRow, { width }]}>
+      {Array.from({ length: count }).map((_, i) => (
+        <View key={i} style={styles.sprocket} />
+      ))}
+    </View>
+  );
+}
+
+const canvasStyles = {
+  scrap: { backgroundColor: '#0f241f' },
+  minimal: { backgroundColor: '#faf8f3' },
+  film: { backgroundColor: '#141414' },
+};
+
+const titleStyles = {
+  scrap: { color: '#fff' },
+  minimal: { color: '#26323a' },
+  film: { color: '#f2f2f2' },
+};
+
+const rangeStyles = {
+  scrap: { color: 'rgba(255, 255, 255, 0.65)' },
+  minimal: { color: '#8a8f94' },
+  film: { color: '#e8b84b' },
+};
+
+const brandStyles = {
+  scrap: { color: 'rgba(255, 255, 255, 0.45)' },
+  minimal: { color: '#b9bcbf' },
+  film: { color: 'rgba(255, 255, 255, 0.4)' },
+};
 
 const styles = StyleSheet.create({
   backdrop: {
@@ -282,21 +314,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  canvas: {
-    backgroundColor: '#0f241f',
-    paddingHorizontal: PAD,
+  canvasBase: {
     paddingTop: 22,
     paddingBottom: 16,
     borderRadius: 4,
+    alignItems: 'center',
   },
-  canvasTitle: {
-    color: '#fff',
+  titleBase: {
     fontSize: 25,
     fontWeight: '700',
     textAlign: 'center',
+    maxWidth: '90%',
   },
-  rangeLabel: {
-    color: 'rgba(255, 255, 255, 0.65)',
+  rangeBase: {
     fontSize: 14,
     textAlign: 'center',
     marginTop: 6,
@@ -308,11 +338,15 @@ const styles = StyleSheet.create({
     marginTop: 18,
     marginBottom: 6,
   },
-  card: {
-    width: CARD_W,
+  rowFilm: {
+    marginTop: 6,
+    marginBottom: 2,
+  },
+  scrapCard: {
+    width: PHOTO_W + 20,
     backgroundColor: '#fdfdf6',
     borderRadius: 3,
-    paddingHorizontal: CARD_PAD,
+    paddingHorizontal: 10,
     paddingTop: 6,
     paddingBottom: 12,
     shadowColor: '#000',
@@ -320,45 +354,84 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 3 },
   },
-  cardGap: {
-    marginRight: GAP,
-  },
-  cardTag: {
+  scrapTag: {
     color: '#0f5132',
     fontSize: 14,
     fontWeight: '700',
     textAlign: 'center',
     marginBottom: 4,
   },
-  cardTagEmpty: {
+  tagEmpty: {
     color: 'transparent',
   },
   photo: {
     width: PHOTO_W,
     height: PHOTO_H,
-    backgroundColor: '#e8e8e0',
+    backgroundColor: '#dcdcd4',
   },
-  cardDate: {
+  scrapDate: {
     color: '#555',
     fontSize: 14,
     textAlign: 'center',
     marginTop: 8,
   },
-  brand: {
-    color: 'rgba(255, 255, 255, 0.45)',
+  minimalDate: {
+    color: '#6b7177',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  filmDate: {
+    color: '#e8b84b',
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 6,
+    fontVariant: ['tabular-nums'],
+  },
+  sprocketRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-evenly',
+    marginTop: 12,
+  },
+  sprocket: {
+    width: 18,
+    height: 12,
+    borderRadius: 3,
+    backgroundColor: '#f5f1e6',
+    opacity: 0.92,
+  },
+  brandBase: {
     fontSize: 13,
     textAlign: 'center',
     marginTop: 12,
     letterSpacing: 1,
   },
-  previewImage: {
-    width: '92%',
-    height: '60%',
+  templateRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 22,
+  },
+  templateChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  templateChipActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+  },
+  templateChipText: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  templateChipTextActive: {
+    color: '#fff',
   },
   actionRow: {
     flexDirection: 'row',
     gap: 14,
-    marginTop: 22,
+    marginTop: 18,
   },
   primaryButton: {
     backgroundColor: '#0f5132',
@@ -389,14 +462,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 24,
+    marginTop: 20,
   },
   statusText: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 14,
   },
   cancelButton: {
-    marginTop: 16,
+    marginTop: 14,
     paddingVertical: 10,
     paddingHorizontal: 24,
   },
