@@ -154,7 +154,13 @@ export default function GalleryScreen({ navigation }) {
               )
             }
           >
-            <Text style={styles.privacyButtonText}>プライバシー</Text>
+            <Text
+              style={styles.privacyButtonText}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+            >
+              プライバシー
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
