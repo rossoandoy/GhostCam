@@ -2,6 +2,7 @@
 
 定点観測カメラアプリ（Expo SDK 55 / Managed Workflow）の iOS App Store 公開プロジェクト。
 **まず `HANDOFF.md`（現状）と `RELEASE_PLAYBOOK.md`（残作業の完全手順書）を読むこと。**
+**v1.0 提出後の継続開発は `DEVELOPMENT.md` の GitHub フロー（Issue → ブランチ → PR → codex レビュー → squash merge）に従う。main へ直接 push しない。**
 
 ## 絶対に守ること
 
