@@ -201,11 +201,15 @@ function HibikasaneSession({ shown, onClose, onSaved, photos, seriesId, seriesNa
             >
               <Text style={styles.primaryButtonText}>保存する</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryButton} onPress={handleShare}>
+            <TouchableOpacity
+              style={[styles.secondaryButton, saving && styles.buttonDisabled]}
+              onPress={handleShare}
+              disabled={saving}
+            >
               <Text style={styles.secondaryButtonText}>共有</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
+          <TouchableOpacity style={styles.cancelButton} onPress={onClose} disabled={saving}>
             <Text style={styles.cancelButtonText}>閉じる</Text>
           </TouchableOpacity>
         </>

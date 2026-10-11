@@ -131,14 +131,18 @@ export default function GalleryScreen({ navigation }) {
           onPress: async () => {
             try {
               await deletePhoto(photoUri);
-              if (activeSeries?.id) {
-                await refreshPhotos(activeSeries.id);
-                await refreshHibikasane(activeSeries.id);
-              }
-              closeViewer();
             } catch (error) {
               console.error('Error deleting photo:', error);
               Alert.alert('エラー', '写真の削除に失敗しました。');
+              return;
+            }
+            closeViewer();
+            if (activeSeries?.id) {
+              // Refresh failures must not read as a failed delete.
+              await Promise.allSettled([
+                refreshPhotos(activeSeries.id),
+                refreshHibikasane(activeSeries.id),
+              ]);
             }
           },
         },
@@ -236,6 +240,7 @@ export default function GalleryScreen({ navigation }) {
         <View style={styles.emptyState} />
       ) : (activeTab === 'photos' ? photos : hibikasaneList).length > 0 ? (
         <FlatList
+          key={activeTab}
           data={activeTab === 'photos' ? photos : hibikasaneList}
           renderItem={renderItem}
           keyExtractor={(item) => item.uri}
