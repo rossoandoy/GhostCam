@@ -182,26 +182,46 @@ export async function saveStoreAsync(store) {
   }
 }
 
+async function readAndRepairAsync(file) {
+  const raw = await file.text();
+  const parsed = JSON.parse(raw);
+  const { store, repaired } = normalizeStoreWithMeta(parsed);
+  if (repaired) {
+    // Persist the repair immediately; otherwise a valid-but-corrupt store
+    // would regenerate a fresh default series (new id) on every launch,
+    // orphaning any photos already saved under the previous id.
+    await saveStoreAsync(store).catch(error => {
+      console.warn('[seriesStore] Failed to persist repaired store:', error);
+    });
+  }
+  return store;
+}
+
 export async function loadStoreAsync() {
   try {
-    const raw = await storeFile().text();
-    const parsed = JSON.parse(raw);
-    const { store, repaired } = normalizeStoreWithMeta(parsed);
-    if (repaired) {
-      // Persist the repair immediately; otherwise a valid-but-corrupt store
-      // would regenerate a fresh default series (new id) on every launch,
-      // orphaning any photos already saved under the previous id.
-      await saveStoreAsync(store).catch(error => {
-        console.warn('[seriesStore] Failed to persist repaired store:', error);
-      });
-    }
-    return store;
+    return await readAndRepairAsync(storeFile());
   } catch (error) {
-    console.warn('[seriesStore] Failed to load store, initializing default:', error);
-    const store = normalizeStore({});
-    await saveStoreAsync(store);
-    return store;
+    console.warn('[seriesStore] Failed to load store:', error);
   }
+
+  // A crash between the swap steps in saveStoreAsync can leave only the
+  // backup behind. Recover from it instead of generating a default store
+  // (which would mint a new series id and orphan the existing photos).
+  try {
+    const bak = storeBakFile();
+    if (bak.exists) {
+      console.warn('[seriesStore] Recovering store from backup');
+      const store = await readAndRepairAsync(bak);
+      await saveStoreAsync(store);
+      return store;
+    }
+  } catch (error) {
+    console.warn('[seriesStore] Failed to recover store from backup:', error);
+  }
+
+  const store = normalizeStore({});
+  await saveStoreAsync(store);
+  return store;
 }
 
 export async function migrateLegacyPhotosAsync(store, targetSeriesId) {
