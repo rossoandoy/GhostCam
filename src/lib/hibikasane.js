@@ -18,6 +18,10 @@ export function pickTimelinePhotos(photosNewestFirst, maxCount = DEFAULT_MAX_COU
   if (n === total) {
     return chrono;
   }
+  if (n === 1) {
+    // Degenerate maxCount: show the latest photo (division below needs n >= 2).
+    return [chrono[total - 1]];
+  }
 
   const picked = [];
   for (let i = 0; i < n; i++) {

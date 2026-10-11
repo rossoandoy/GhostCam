@@ -25,6 +25,7 @@ export default function GalleryScreen({ navigation }) {
   const [photos, setPhotos] = useState([]);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [hibikasaneVisible, setHibikasaneVisible] = useState(false);
+  const closeHibikasane = useCallback(() => setHibikasaneVisible(false), []);
   const isMountedRef = useRef(false);
 
   useEffect(() => {
@@ -181,7 +182,10 @@ export default function GalleryScreen({ navigation }) {
           renderItem={renderItem}
           keyExtractor={(item) => item.uri}
           numColumns={3}
-          contentContainerStyle={styles.gridContainer}
+          contentContainerStyle={[
+            styles.gridContainer,
+            photos.length >= 2 && styles.gridContainerWithButton,
+          ]}
         />
       ) : (
         <View style={styles.emptyState}>
@@ -201,7 +205,7 @@ export default function GalleryScreen({ navigation }) {
 
       <HibikasaneModal
         visible={hibikasaneVisible}
-        onClose={() => setHibikasaneVisible(false)}
+        onClose={closeHibikasane}
         photos={photos}
         seriesName={activeSeries?.name ?? ''}
       />
@@ -298,6 +302,8 @@ const styles = StyleSheet.create({
   },
   gridContainer: {
     flexGrow: 1,
+  },
+  gridContainerWithButton: {
     paddingBottom: 96,
   },
   hibikasaneButton: {
