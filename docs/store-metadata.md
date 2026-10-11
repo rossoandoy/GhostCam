@@ -175,7 +175,8 @@ HOW TO TEST THE CORE FEATURES (Onboarding, Series, "Ghost" overlay)
    picker. Tap "＋ 新しいシリーズ" (+ New series) to create another series
    (name + optional location label), or tap an existing series to switch
    to it — the ghost overlay and gallery update to that series' own
-   photos. Long-press a series row to edit its name/location label.
+   photos. Tap the "編集" (Edit) button on a series row (or long-press
+   the row) to edit its name/location label.
 7. Tap the gallery thumbnail (bottom-right of the camera screen) to open
    the gallery. It shows only the photos of the currently active series,
    listed newest-first in a 3-column grid.
