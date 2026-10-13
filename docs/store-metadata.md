@@ -206,6 +206,17 @@ DATA COLLECTION / ACCOUNTS
   "location label" is just a user-chosen text tag (e.g. "Living room").
 - The only permission requested is Camera.
 
+NOTE FOR RESUBMISSION (build 3)
+
+- The flagged NSMicrophoneUsageDescription has been REMOVED from the
+  binary: the app never uses the microphone (photo-only camera).
+- This build also adds "Hibikasane": a one-tap feature that composes a
+  series' photos (oldest / evenly spaced / latest, up to 4) into a single
+  timeline-comparison image with 3 selectable templates, saved to an
+  in-app tab or shared via the system share sheet. Fully on-device, no
+  new permissions. The full-screen viewer now also shows the capture
+  date and optional location label.
+
 Thank you for reviewing HibiCam.
 ```
 
