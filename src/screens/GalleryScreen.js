@@ -16,13 +16,19 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { useSeries } from '../context/SeriesContext';
 import { listSeriesPhotos, deletePhoto, formatCapturedAt } from '../lib/photoLib';
+import { listHibikasane } from '../lib/hibikasane';
+import HibikasaneModal from '../components/HibikasaneModal';
 
 const PRIVACY_POLICY_URL = 'https://rossoandoy.github.io/GhostCam/';
 
 export default function GalleryScreen({ navigation }) {
   const { status, activeSeries } = useSeries();
   const [photos, setPhotos] = useState([]);
+  const [hibikasaneList, setHibikasaneList] = useState([]);
+  const [activeTab, setActiveTab] = useState('photos'); // 'photos' | 'hibikasane'
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [hibikasaneVisible, setHibikasaneVisible] = useState(false);
+  const closeHibikasane = useCallback(() => setHibikasaneVisible(false), []);
   const isMountedRef = useRef(false);
 
   useEffect(() => {
@@ -38,15 +44,25 @@ export default function GalleryScreen({ navigation }) {
     setPhotos(list);
   }, []);
 
+  const refreshHibikasane = useCallback(async seriesId => {
+    const list = await listHibikasane(seriesId);
+    if (!isMountedRef.current) return;
+    setHibikasaneList(list);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       let alive = true;
 
       if (status === 'ready' && activeSeries?.id) {
-        listSeriesPhotos(activeSeries.id)
-          .then(list => {
+        Promise.all([
+          listSeriesPhotos(activeSeries.id),
+          listHibikasane(activeSeries.id),
+        ])
+          .then(([photoList, hibikasane]) => {
             if (!alive) return;
-            setPhotos(list);
+            setPhotos(photoList);
+            setHibikasaneList(hibikasane);
           })
           .catch(error => {
             console.error('Error loading photos:', error);
@@ -55,6 +71,7 @@ export default function GalleryScreen({ navigation }) {
           });
       } else {
         setPhotos([]);
+        setHibikasaneList([]);
       }
 
       return () => {
@@ -62,6 +79,26 @@ export default function GalleryScreen({ navigation }) {
       };
     }, [status, activeSeries?.id])
   );
+
+  const handleHibikasaneSaved = useCallback(() => {
+    setActiveTab('hibikasane');
+    if (activeSeries?.id) {
+      refreshHibikasane(activeSeries.id).catch(error => {
+        console.error('Error refreshing hibikasane:', error);
+      });
+    }
+  }, [activeSeries?.id, refreshHibikasane]);
+
+  const handleHibikasanePress = () => {
+    if (photos.length < 2) {
+      Alert.alert(
+        'ヒビカサネ',
+        '写真が2枚以上たまると、時系列を1枚にまとめた「ヒビカサネ」を作れます。まずはもう1枚撮ってみましょう。'
+      );
+      return;
+    }
+    setHibikasaneVisible(true);
+  };
 
   const closeViewer = () => {
     setSelectedPhoto(null);
@@ -94,13 +131,18 @@ export default function GalleryScreen({ navigation }) {
           onPress: async () => {
             try {
               await deletePhoto(photoUri);
-              if (activeSeries?.id) {
-                await refreshPhotos(activeSeries.id);
-              }
-              closeViewer();
             } catch (error) {
               console.error('Error deleting photo:', error);
               Alert.alert('エラー', '写真の削除に失敗しました。');
+              return;
+            }
+            closeViewer();
+            if (activeSeries?.id) {
+              // Refresh failures must not read as a failed delete.
+              await Promise.allSettled([
+                refreshPhotos(activeSeries.id),
+                refreshHibikasane(activeSeries.id),
+              ]);
             }
           },
         },
@@ -171,22 +213,74 @@ export default function GalleryScreen({ navigation }) {
         </View>
       </View>
 
+      {isReady && (
+        <View style={styles.tabRow}>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'photos' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('photos')}
+          >
+            <Text style={[styles.tabText, activeTab === 'photos' && styles.tabTextActive]}>
+              写真
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === 'hibikasane' && styles.tabButtonActive]}
+            onPress={() => setActiveTab('hibikasane')}
+          >
+            <Text
+              style={[styles.tabText, activeTab === 'hibikasane' && styles.tabTextActive]}
+            >
+              ヒビカサネ{hibikasaneList.length > 0 ? `（${hibikasaneList.length}）` : ''}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {!isReady ? (
         <View style={styles.emptyState} />
-      ) : photos.length > 0 ? (
+      ) : (activeTab === 'photos' ? photos : hibikasaneList).length > 0 ? (
         <FlatList
-          data={photos}
+          key={activeTab}
+          data={activeTab === 'photos' ? photos : hibikasaneList}
           renderItem={renderItem}
           keyExtractor={(item) => item.uri}
           numColumns={3}
-          contentContainerStyle={styles.gridContainer}
+          contentContainerStyle={[styles.gridContainer, styles.gridContainerWithButton]}
         />
-      ) : (
+      ) : activeTab === 'photos' ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyStateText}>このシリーズにはまだ写真がありません</Text>
           <Text style={styles.emptyStateSubtext}>カメラで1枚目を撮影してみましょう</Text>
         </View>
+      ) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateText}>まだヒビカサネがありません</Text>
+          <Text style={styles.emptyStateSubtext}>
+            写真が2枚以上たまったら、下のボタンから作れます
+          </Text>
+        </View>
       )}
+
+      {isReady && (
+        <TouchableOpacity
+          style={[
+            styles.hibikasaneButton,
+            photos.length < 2 && styles.hibikasaneButtonDisabled,
+          ]}
+          onPress={handleHibikasanePress}
+        >
+          <Text style={styles.hibikasaneButtonText}>ヒビカサネをつくる</Text>
+        </TouchableOpacity>
+      )}
+
+      <HibikasaneModal
+        visible={hibikasaneVisible}
+        onClose={closeHibikasane}
+        onSaved={handleHibikasaneSaved}
+        photos={photos}
+        seriesId={activeSeries?.id ?? ''}
+        seriesName={activeSeries?.name ?? ''}
+      />
 
       <Modal
         visible={!!selectedPhoto}
@@ -280,6 +374,53 @@ const styles = StyleSheet.create({
   },
   gridContainer: {
     flexGrow: 1,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  tabButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  tabButtonActive: {
+    backgroundColor: 'rgba(255, 255, 255, 0.22)',
+  },
+  tabText: {
+    color: 'rgba(255, 255, 255, 0.55)',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  tabTextActive: {
+    color: '#fff',
+  },
+  gridContainerWithButton: {
+    paddingBottom: 96,
+  },
+  hibikasaneButton: {
+    position: 'absolute',
+    bottom: 36,
+    alignSelf: 'center',
+    backgroundColor: '#0f5132',
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  hibikasaneButtonDisabled: {
+    backgroundColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  hibikasaneButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
   },
   gridItem: {
     margin: 0,
