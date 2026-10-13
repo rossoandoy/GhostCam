@@ -16,7 +16,8 @@
         "expo-camera",
         {
           "cameraPermission": "カメラへのアクセスを許可してください。定点観測の撮影に使用します。",
-          "recordAudioAndroid": false
+          "recordAudioAndroid": false,
+          "microphonePermission": false
         }
       ]
     ],
