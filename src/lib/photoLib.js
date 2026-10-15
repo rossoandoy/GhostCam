@@ -50,6 +50,8 @@ export function formatCapturedAt(ms) {
   return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
 }
 
+const MS_PER_DAY = 86400000;
+
 function startOfLocalDay(ms) {
   const date = new Date(ms);
   date.setHours(0, 0, 0, 0);
@@ -62,7 +64,7 @@ export function daysBetweenLocal(fromMs, toMs) {
   if (fromMs === null || fromMs === undefined || toMs === null || toMs === undefined) {
     return null;
   }
-  return Math.round((startOfLocalDay(toMs) - startOfLocalDay(fromMs)) / 86400000);
+  return Math.round((startOfLocalDay(toMs) - startOfLocalDay(fromMs)) / MS_PER_DAY);
 }
 
 // Consecutive-day run ending at the newest photo's day.
@@ -82,7 +84,7 @@ export function computeStreak(photos) {
 
   let streak = 1;
   for (let i = 1; i < days.length; i++) {
-    if (Math.round((days[i - 1] - days[i]) / 86400000) === 1) {
+    if (daysBetweenLocal(days[i], days[i - 1]) === 1) {
       streak += 1;
     } else {
       break;
@@ -103,11 +105,6 @@ export async function listSeriesPhotos(seriesId) {
       filename: file.name,
       capturedAt: timestampFromFilename(file.name),
     }));
-}
-
-export async function getLatestSeriesPhoto(seriesId) {
-  const photos = await listSeriesPhotos(seriesId);
-  return photos.length > 0 ? photos[0] : null;
 }
 
 export async function saveCameraPhoto(seriesId, tempUri) {

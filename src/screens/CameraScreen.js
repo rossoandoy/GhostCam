@@ -1,5 +1,14 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Image, Text, Alert, Linking } from 'react-native';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Text,
+  Alert,
+  Linking,
+  AppState,
+} from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,6 +33,19 @@ export default function CameraScreen({ navigation }) {
   const [ghostOpacity, setGhostOpacity] = useState(0.3);
   const [pickerVisible, setPickerVisible] = useState(false);
   const [streak, setStreak] = useState(0);
+
+  // "Days since last shot" must refresh when the app comes back to the
+  // foreground (e.g. reopened the next morning); render-time Date.now()
+  // alone would stay stale because nothing re-renders on resume.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        setNowTick(Date.now());
+      }
+    });
+    return () => subscription.remove();
+  }, []);
   const cameraRef = useRef(null);
   const insets = useSafeAreaInsets();
 
@@ -43,6 +65,7 @@ export default function CameraScreen({ navigation }) {
       setGhostPhoto(null);
       setLatestPhoto(null);
       setStreak(0);
+      setNowTick(Date.now());
 
       if (status === 'ready' && seriesId) {
         listSeriesPhotos(seriesId)
@@ -65,13 +88,15 @@ export default function CameraScreen({ navigation }) {
     }, [status, activeSeries?.id])
   );
 
+  const capturingRef = useRef(false);
+
   const takePicture = async () => {
-    if (!cameraRef.current || !activeSeries?.id) {
+    if (!cameraRef.current || !activeSeries?.id || capturingRef.current) {
       return;
     }
+    capturingRef.current = true;
 
     const seriesId = activeSeries.id;
-    const previousPhoto = ghostPhoto;
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
@@ -86,18 +111,22 @@ export default function CameraScreen({ navigation }) {
         setGhostPhoto(savedPhoto);
         setLatestPhoto(savedPhoto);
 
-        // Incremental streak update, consistent with computeStreak().
-        setStreak(current => {
-          if (!previousPhoto) return 1;
-          const gap = daysBetweenLocal(previousPhoto.capturedAt, savedPhoto.capturedAt);
-          if (gap === 0) return Math.max(current, 1);
-          if (gap === 1) return Math.max(current, 1) + 1;
-          return 1;
-        });
+        // Recompute from disk so the streak can never drift from
+        // computeStreak()'s definition (a failure here is non-fatal).
+        try {
+          const photoList = await listSeriesPhotos(seriesId);
+          if (activeSeriesIdRef.current === seriesId) {
+            setStreak(computeStreak(photoList));
+          }
+        } catch (streakError) {
+          console.error('Error refreshing streak:', streakError);
+        }
       }
     } catch (error) {
       console.error('Error taking picture:', error);
       Alert.alert('エラー', '写真の保存に失敗しました。もう一度お試しください。');
+    } finally {
+      capturingRef.current = false;
     }
   };
 
@@ -158,7 +187,7 @@ export default function CameraScreen({ navigation }) {
   }
 
   const daysSinceLast = ghostPhoto
-    ? daysBetweenLocal(ghostPhoto.capturedAt, Date.now())
+    ? daysBetweenLocal(ghostPhoto.capturedAt, nowTick)
     : null;
 
   // CameraView must not have children (officially unsupported; may crash).
@@ -201,7 +230,9 @@ export default function CameraScreen({ navigation }) {
           </Text>
         )}
 
-        {streak >= 2 && (
+        {/* Only a live run (last shot today or yesterday) reads as a streak;
+            an old run next to "前回から N日" would contradict it. */}
+        {streak >= 2 && daysSinceLast !== null && daysSinceLast <= 1 && (
           <Text pointerEvents="none" style={styles.streakBadge}>
             {`${streak}日連続`}
           </Text>
