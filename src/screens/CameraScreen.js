@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -8,12 +8,19 @@ import {
   Alert,
   Linking,
   Animated,
+  AppState,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSeries } from '../context/SeriesContext';
-import { getLatestSeriesPhoto, saveCameraPhoto, formatCapturedAt } from '../lib/photoLib';
+import {
+  listSeriesPhotos,
+  saveCameraPhoto,
+  formatCapturedAt,
+  daysBetweenLocal,
+  computeStreak,
+} from '../lib/photoLib';
 import SeriesPickerModal from '../components/SeriesPickerModal';
 import OnboardingOverlay from '../components/OnboardingOverlay';
 
@@ -34,6 +41,20 @@ export default function CameraScreen({ navigation }) {
   const [latestPhoto, setLatestPhoto] = useState(null);
   const [ghostOpacity, setGhostOpacity] = useState(0.3);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [streak, setStreak] = useState(0);
+
+  // "Days since last shot" must refresh when the app comes back to the
+  // foreground (e.g. reopened the next morning); render-time Date.now()
+  // alone would stay stale because nothing re-renders on resume.
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        setNowTick(Date.now());
+      }
+    });
+    return () => subscription.remove();
+  }, []);
   const cameraRef = useRef(null);
   const insets = useSafeAreaInsets();
 
@@ -133,16 +154,20 @@ export default function CameraScreen({ navigation }) {
       // series' ghost/thumbnail while the new one is loading.
       setGhostPhoto(null);
       setLatestPhoto(null);
+      setStreak(0);
+      setNowTick(Date.now());
 
       // A pending flash belongs to the previous focus/series.
       cancelFlash();
 
       if (status === 'ready' && seriesId) {
-        getLatestSeriesPhoto(seriesId)
-          .then(photo => {
+        listSeriesPhotos(seriesId)
+          .then(photoList => {
             if (!alive || activeSeriesIdRef.current !== seriesId) return;
+            const photo = photoList.length > 0 ? photoList[0] : null;
             setGhostPhoto(photo);
             setLatestPhoto(photo);
+            setStreak(computeStreak(photoList));
           })
           .catch(error => {
             if (!alive || activeSeriesIdRef.current !== seriesId) return;
@@ -186,6 +211,17 @@ export default function CameraScreen({ navigation }) {
 
         if (previousPhoto) {
           startFlash(previousPhoto.uri, savedPhoto.uri);
+        }
+
+        // Recompute from disk so the streak can never drift from
+        // computeStreak()'s definition (a failure here is non-fatal).
+        try {
+          const photoList = await listSeriesPhotos(seriesId);
+          if (activeSeriesIdRef.current === seriesId) {
+            setStreak(computeStreak(photoList));
+          }
+        } catch (streakError) {
+          console.error('Error refreshing streak:', streakError);
         }
       }
     } catch (error) {
@@ -252,6 +288,10 @@ export default function CameraScreen({ navigation }) {
     );
   }
 
+  const daysSinceLast = ghostPhoto
+    ? daysBetweenLocal(ghostPhoto.capturedAt, nowTick)
+    : null;
+
   // CameraView must not have children (officially unsupported; may crash).
   // Overlay and controls are absolutely-positioned siblings instead.
   return (
@@ -307,6 +347,20 @@ export default function CameraScreen({ navigation }) {
           <Text pointerEvents="none" style={styles.infoRow}>
             {`前回 ${formatCapturedAt(ghostPhoto.capturedAt)}`}
             {activeSeries.locationLabel ? ` ・${activeSeries.locationLabel}` : ''}
+          </Text>
+        )}
+
+        {daysSinceLast !== null && daysSinceLast >= 1 && (
+          <Text pointerEvents="none" style={styles.daysSince}>
+            {`前回から ${daysSinceLast}日`}
+          </Text>
+        )}
+
+        {/* Only a live run (last shot today or yesterday) reads as a streak;
+            an old run next to "前回から N日" would contradict it. */}
+        {streak >= 2 && daysSinceLast !== null && daysSinceLast <= 1 && (
+          <Text pointerEvents="none" style={styles.streakBadge}>
+            {`${streak}日連続`}
           </Text>
         )}
       </View>
@@ -417,6 +471,26 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.6)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+  },
+  daysSince: {
+    marginTop: 4,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  streakBadge: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffd977',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    overflow: 'hidden',
   },
   controls: {
     position: 'absolute',
