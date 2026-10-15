@@ -19,6 +19,14 @@ import OnboardingOverlay from '../components/OnboardingOverlay';
 
 const GHOST_OPACITY_STEPS = [0.15, 0.3, 0.5];
 
+// Before/after flash timeline (ms).
+const FLASH_HOLD_FROM = 250;
+const FLASH_CROSSFADE = 550;
+const FLASH_HOLD_TO = 650;
+const FLASH_FADE_OUT = 300;
+// Start even if the new photo's onLoad never fires (e.g. slow decode).
+const FLASH_LOAD_TIMEOUT = 800;
+
 export default function CameraScreen({ navigation }) {
   const { status, onboardingCompleted, activeSeries } = useSeries();
   const [permission, requestPermission] = useCameraPermissions();
@@ -30,42 +38,84 @@ export default function CameraScreen({ navigation }) {
   const insets = useSafeAreaInsets();
 
   // Before/after flash shown right after a shot (2nd photo onwards).
-  // flashSeqRef invalidates stale animation callbacks when a new flash
-  // starts (rapid shots) or the screen loses focus.
+  // flashSeqRef invalidates stale callbacks when a new flash starts
+  // (rapid shots) or the screen loses focus. The running sequence is
+  // kept in flashAnimRef so it can be hard-stopped: stopAnimation() on
+  // the Values would not interrupt Animated.delay() steps.
   const [flash, setFlash] = useState(null);
   const flashSeqRef = useRef(0);
+  const flashAnimRef = useRef(null);
+  const flashStartedForRef = useRef(0);
+  const flashLoadTimerRef = useRef(null);
   const flashCrossfade = useRef(new Animated.Value(0)).current;
   const flashOverlayOpacity = useRef(new Animated.Value(1)).current;
 
-  const startFlash = useCallback(
-    (fromUri, toUri) => {
-      const id = ++flashSeqRef.current;
-      flashCrossfade.stopAnimation();
-      flashOverlayOpacity.stopAnimation();
-      flashCrossfade.setValue(0);
-      flashOverlayOpacity.setValue(1);
-      setFlash({ fromUri, toUri });
+  const cancelFlash = useCallback(() => {
+    flashSeqRef.current += 1;
+    if (flashLoadTimerRef.current) {
+      clearTimeout(flashLoadTimerRef.current);
+      flashLoadTimerRef.current = null;
+    }
+    if (flashAnimRef.current) {
+      flashAnimRef.current.stop();
+      flashAnimRef.current = null;
+    }
+    setFlash(null);
+  }, []);
 
-      Animated.sequence([
-        Animated.delay(250),
+  const beginFlashAnimation = useCallback(
+    id => {
+      if (flashSeqRef.current !== id || flashStartedForRef.current === id) {
+        return;
+      }
+      flashStartedForRef.current = id;
+      if (flashLoadTimerRef.current) {
+        clearTimeout(flashLoadTimerRef.current);
+        flashLoadTimerRef.current = null;
+      }
+
+      const animation = Animated.sequence([
+        Animated.delay(FLASH_HOLD_FROM),
         Animated.timing(flashCrossfade, {
           toValue: 1,
-          duration: 550,
+          duration: FLASH_CROSSFADE,
           useNativeDriver: true,
         }),
-        Animated.delay(650),
+        Animated.delay(FLASH_HOLD_TO),
         Animated.timing(flashOverlayOpacity, {
           toValue: 0,
-          duration: 300,
+          duration: FLASH_FADE_OUT,
           useNativeDriver: true,
         }),
-      ]).start(({ finished }) => {
+      ]);
+      flashAnimRef.current = animation;
+      animation.start(({ finished }) => {
         if (finished && flashSeqRef.current === id) {
+          flashAnimRef.current = null;
           setFlash(null);
         }
       });
     },
     [flashCrossfade, flashOverlayOpacity]
+  );
+
+  const startFlash = useCallback(
+    (fromUri, toUri) => {
+      cancelFlash();
+      const id = flashSeqRef.current;
+      flashCrossfade.setValue(0);
+      flashOverlayOpacity.setValue(1);
+      setFlash({ id, fromUri, toUri });
+
+      // The timeline begins once the new photo is decoded (onLoad on the
+      // "to" image), with a timeout fallback, so the crossfade never
+      // reveals a still-loading image.
+      flashLoadTimerRef.current = setTimeout(
+        () => beginFlashAnimation(id),
+        FLASH_LOAD_TIMEOUT
+      );
+    },
+    [cancelFlash, beginFlashAnimation, flashCrossfade, flashOverlayOpacity]
   );
 
   // Tracks the series the user has selected "right now" so async work
@@ -85,8 +135,7 @@ export default function CameraScreen({ navigation }) {
       setLatestPhoto(null);
 
       // A pending flash belongs to the previous focus/series.
-      flashSeqRef.current += 1;
-      setFlash(null);
+      cancelFlash();
 
       if (status === 'ready' && seriesId) {
         getLatestSeriesPhoto(seriesId)
@@ -103,14 +152,21 @@ export default function CameraScreen({ navigation }) {
 
       return () => {
         alive = false;
+        cancelFlash();
       };
-    }, [status, activeSeries?.id])
+    }, [status, activeSeries?.id, cancelFlash])
   );
 
+  const capturingRef = useRef(false);
+
   const takePicture = async () => {
-    if (!cameraRef.current || !activeSeries?.id) {
+    if (!cameraRef.current || !activeSeries?.id || capturingRef.current) {
       return;
     }
+    capturingRef.current = true;
+
+    // Restore the live preview immediately if a flash is still showing.
+    cancelFlash();
 
     const seriesId = activeSeries.id;
     const previousPhoto = ghostPhoto;
@@ -135,6 +191,8 @@ export default function CameraScreen({ navigation }) {
     } catch (error) {
       console.error('Error taking picture:', error);
       Alert.alert('エラー', '写真の保存に失敗しました。もう一度お試しください。');
+    } finally {
+      capturingRef.current = false;
     }
   };
 
@@ -227,7 +285,10 @@ export default function CameraScreen({ navigation }) {
             source={{ uri: flash.toUri }}
             style={[StyleSheet.absoluteFill, { opacity: flashCrossfade }]}
             resizeMode="cover"
+            onLoad={() => beginFlashAnimation(flash.id)}
+            onError={cancelFlash}
           />
+          {/* 120 clears the shutter row (70px buttons + 24px padding + margin) */}
           <View style={[styles.flashLabelWrap, { bottom: insets.bottom + 120 }]}>
             <Text style={styles.flashLabel}>前回 → いま</Text>
           </View>
@@ -330,9 +391,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
     overflow: 'hidden',
-    textShadowColor: 'rgba(0, 0, 0, 0.6)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
   seriesHeader: {
     position: 'absolute',
