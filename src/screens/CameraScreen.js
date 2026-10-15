@@ -4,7 +4,13 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSeries } from '../context/SeriesContext';
-import { getLatestSeriesPhoto, saveCameraPhoto, formatCapturedAt } from '../lib/photoLib';
+import {
+  listSeriesPhotos,
+  saveCameraPhoto,
+  formatCapturedAt,
+  daysBetweenLocal,
+  computeStreak,
+} from '../lib/photoLib';
 import SeriesPickerModal from '../components/SeriesPickerModal';
 import OnboardingOverlay from '../components/OnboardingOverlay';
 
@@ -17,6 +23,7 @@ export default function CameraScreen({ navigation }) {
   const [latestPhoto, setLatestPhoto] = useState(null);
   const [ghostOpacity, setGhostOpacity] = useState(0.3);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [streak, setStreak] = useState(0);
   const cameraRef = useRef(null);
   const insets = useSafeAreaInsets();
 
@@ -35,13 +42,16 @@ export default function CameraScreen({ navigation }) {
       // series' ghost/thumbnail while the new one is loading.
       setGhostPhoto(null);
       setLatestPhoto(null);
+      setStreak(0);
 
       if (status === 'ready' && seriesId) {
-        getLatestSeriesPhoto(seriesId)
-          .then(photo => {
+        listSeriesPhotos(seriesId)
+          .then(photoList => {
             if (!alive || activeSeriesIdRef.current !== seriesId) return;
+            const photo = photoList.length > 0 ? photoList[0] : null;
             setGhostPhoto(photo);
             setLatestPhoto(photo);
+            setStreak(computeStreak(photoList));
           })
           .catch(error => {
             if (!alive || activeSeriesIdRef.current !== seriesId) return;
@@ -61,6 +71,7 @@ export default function CameraScreen({ navigation }) {
     }
 
     const seriesId = activeSeries.id;
+    const previousPhoto = ghostPhoto;
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
@@ -74,6 +85,15 @@ export default function CameraScreen({ navigation }) {
       if (activeSeriesIdRef.current === seriesId) {
         setGhostPhoto(savedPhoto);
         setLatestPhoto(savedPhoto);
+
+        // Incremental streak update, consistent with computeStreak().
+        setStreak(current => {
+          if (!previousPhoto) return 1;
+          const gap = daysBetweenLocal(previousPhoto.capturedAt, savedPhoto.capturedAt);
+          if (gap === 0) return Math.max(current, 1);
+          if (gap === 1) return Math.max(current, 1) + 1;
+          return 1;
+        });
       }
     } catch (error) {
       console.error('Error taking picture:', error);
@@ -137,6 +157,10 @@ export default function CameraScreen({ navigation }) {
     );
   }
 
+  const daysSinceLast = ghostPhoto
+    ? daysBetweenLocal(ghostPhoto.capturedAt, Date.now())
+    : null;
+
   // CameraView must not have children (officially unsupported; may crash).
   // Overlay and controls are absolutely-positioned siblings instead.
   return (
@@ -168,6 +192,18 @@ export default function CameraScreen({ navigation }) {
           <Text pointerEvents="none" style={styles.infoRow}>
             {`前回 ${formatCapturedAt(ghostPhoto.capturedAt)}`}
             {activeSeries.locationLabel ? ` ・${activeSeries.locationLabel}` : ''}
+          </Text>
+        )}
+
+        {daysSinceLast !== null && daysSinceLast >= 1 && (
+          <Text pointerEvents="none" style={styles.daysSince}>
+            {`前回から ${daysSinceLast}日`}
+          </Text>
+        )}
+
+        {streak >= 2 && (
+          <Text pointerEvents="none" style={styles.streakBadge}>
+            {`${streak}日連続`}
           </Text>
         )}
       </View>
@@ -257,6 +293,26 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.6)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+  },
+  daysSince: {
+    marginTop: 4,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#fff',
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  streakBadge: {
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffd977',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    overflow: 'hidden',
   },
   controls: {
     position: 'absolute',
