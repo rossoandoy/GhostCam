@@ -50,6 +50,49 @@ export function formatCapturedAt(ms) {
   return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
 }
 
+const MS_PER_DAY = 86400000;
+
+function startOfLocalDay(ms) {
+  const date = new Date(ms);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+// Difference in local calendar days (0 = same day). Rounded so a DST
+// shift of +/-1h on either side cannot skew the result.
+export function daysBetweenLocal(fromMs, toMs) {
+  if (fromMs === null || fromMs === undefined || toMs === null || toMs === undefined) {
+    return null;
+  }
+  return Math.round((startOfLocalDay(toMs) - startOfLocalDay(fromMs)) / MS_PER_DAY);
+}
+
+// Consecutive-day run ending at the newest photo's day.
+// `photos` is newest-first, as returned by listSeriesPhotos.
+export function computeStreak(photos) {
+  const days = [];
+  for (const photo of photos) {
+    if (photo.capturedAt === null || photo.capturedAt === undefined) continue;
+    const day = startOfLocalDay(photo.capturedAt);
+    if (days[days.length - 1] !== day) {
+      days.push(day);
+    }
+  }
+  if (days.length === 0) {
+    return 0;
+  }
+
+  let streak = 1;
+  for (let i = 1; i < days.length; i++) {
+    if (daysBetweenLocal(days[i], days[i - 1]) === 1) {
+      streak += 1;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
 export async function listSeriesPhotos(seriesId) {
   const dir = await ensureSeriesDirAsync(seriesId);
 
@@ -62,11 +105,6 @@ export async function listSeriesPhotos(seriesId) {
       filename: file.name,
       capturedAt: timestampFromFilename(file.name),
     }));
-}
-
-export async function getLatestSeriesPhoto(seriesId) {
-  const photos = await listSeriesPhotos(seriesId);
-  return photos.length > 0 ? photos[0] : null;
 }
 
 export async function saveCameraPhoto(seriesId, tempUri) {
