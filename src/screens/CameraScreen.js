@@ -1,5 +1,14 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Image, Text, Alert, Linking } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Text,
+  Alert,
+  Linking,
+  Animated,
+} from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +29,45 @@ export default function CameraScreen({ navigation }) {
   const cameraRef = useRef(null);
   const insets = useSafeAreaInsets();
 
+  // Before/after flash shown right after a shot (2nd photo onwards).
+  // flashSeqRef invalidates stale animation callbacks when a new flash
+  // starts (rapid shots) or the screen loses focus.
+  const [flash, setFlash] = useState(null);
+  const flashSeqRef = useRef(0);
+  const flashCrossfade = useRef(new Animated.Value(0)).current;
+  const flashOverlayOpacity = useRef(new Animated.Value(1)).current;
+
+  const startFlash = useCallback(
+    (fromUri, toUri) => {
+      const id = ++flashSeqRef.current;
+      flashCrossfade.stopAnimation();
+      flashOverlayOpacity.stopAnimation();
+      flashCrossfade.setValue(0);
+      flashOverlayOpacity.setValue(1);
+      setFlash({ fromUri, toUri });
+
+      Animated.sequence([
+        Animated.delay(250),
+        Animated.timing(flashCrossfade, {
+          toValue: 1,
+          duration: 550,
+          useNativeDriver: true,
+        }),
+        Animated.delay(650),
+        Animated.timing(flashOverlayOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start(({ finished }) => {
+        if (finished && flashSeqRef.current === id) {
+          setFlash(null);
+        }
+      });
+    },
+    [flashCrossfade, flashOverlayOpacity]
+  );
+
   // Tracks the series the user has selected "right now" so async work
   // started for a previous series can detect it's stale and bail out
   // instead of writing that series' photo into the current view.
@@ -35,6 +83,10 @@ export default function CameraScreen({ navigation }) {
       // series' ghost/thumbnail while the new one is loading.
       setGhostPhoto(null);
       setLatestPhoto(null);
+
+      // A pending flash belongs to the previous focus/series.
+      flashSeqRef.current += 1;
+      setFlash(null);
 
       if (status === 'ready' && seriesId) {
         getLatestSeriesPhoto(seriesId)
@@ -61,6 +113,7 @@ export default function CameraScreen({ navigation }) {
     }
 
     const seriesId = activeSeries.id;
+    const previousPhoto = ghostPhoto;
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
@@ -74,6 +127,10 @@ export default function CameraScreen({ navigation }) {
       if (activeSeriesIdRef.current === seriesId) {
         setGhostPhoto(savedPhoto);
         setLatestPhoto(savedPhoto);
+
+        if (previousPhoto) {
+          startFlash(previousPhoto.uri, savedPhoto.uri);
+        }
       }
     } catch (error) {
       console.error('Error taking picture:', error);
@@ -156,6 +213,27 @@ export default function CameraScreen({ navigation }) {
         />
       )}
 
+      {flash && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.flashOverlay, { opacity: flashOverlayOpacity }]}
+        >
+          <Image
+            source={{ uri: flash.fromUri }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+          <Animated.Image
+            source={{ uri: flash.toUri }}
+            style={[StyleSheet.absoluteFill, { opacity: flashCrossfade }]}
+            resizeMode="cover"
+          />
+          <View style={[styles.flashLabelWrap, { bottom: insets.bottom + 120 }]}>
+            <Text style={styles.flashLabel}>前回 → いま</Text>
+          </View>
+        </Animated.View>
+      )}
+
       <View
         pointerEvents="box-none"
         style={[styles.seriesHeader, { top: insets.top + 8 }]}
@@ -231,6 +309,30 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 1,
+  },
+  flashOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+    backgroundColor: '#000',
+  },
+  flashLabelWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  flashLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    overflow: 'hidden',
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   seriesHeader: {
     position: 'absolute',
