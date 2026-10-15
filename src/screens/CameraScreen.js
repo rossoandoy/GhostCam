@@ -1,5 +1,14 @@
 import React, { useState, useCallback, useRef } from 'react';
-import { View, StyleSheet, TouchableOpacity, Image, Text, Alert, Linking } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  TouchableOpacity,
+  Image,
+  Text,
+  Alert,
+  Linking,
+  Animated,
+} from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,6 +19,14 @@ import OnboardingOverlay from '../components/OnboardingOverlay';
 
 const GHOST_OPACITY_STEPS = [0.15, 0.3, 0.5];
 
+// Before/after flash timeline (ms).
+const FLASH_HOLD_FROM = 250;
+const FLASH_CROSSFADE = 550;
+const FLASH_HOLD_TO = 650;
+const FLASH_FADE_OUT = 300;
+// Start even if the new photo's onLoad never fires (e.g. slow decode).
+const FLASH_LOAD_TIMEOUT = 800;
+
 export default function CameraScreen({ navigation }) {
   const { status, onboardingCompleted, activeSeries } = useSeries();
   const [permission, requestPermission] = useCameraPermissions();
@@ -19,6 +36,87 @@ export default function CameraScreen({ navigation }) {
   const [pickerVisible, setPickerVisible] = useState(false);
   const cameraRef = useRef(null);
   const insets = useSafeAreaInsets();
+
+  // Before/after flash shown right after a shot (2nd photo onwards).
+  // flashSeqRef invalidates stale callbacks when a new flash starts
+  // (rapid shots) or the screen loses focus. The running sequence is
+  // kept in flashAnimRef so it can be hard-stopped: stopAnimation() on
+  // the Values would not interrupt Animated.delay() steps.
+  const [flash, setFlash] = useState(null);
+  const flashSeqRef = useRef(0);
+  const flashAnimRef = useRef(null);
+  const flashStartedForRef = useRef(0);
+  const flashLoadTimerRef = useRef(null);
+  const flashCrossfade = useRef(new Animated.Value(0)).current;
+  const flashOverlayOpacity = useRef(new Animated.Value(1)).current;
+
+  const cancelFlash = useCallback(() => {
+    flashSeqRef.current += 1;
+    if (flashLoadTimerRef.current) {
+      clearTimeout(flashLoadTimerRef.current);
+      flashLoadTimerRef.current = null;
+    }
+    if (flashAnimRef.current) {
+      flashAnimRef.current.stop();
+      flashAnimRef.current = null;
+    }
+    setFlash(null);
+  }, []);
+
+  const beginFlashAnimation = useCallback(
+    id => {
+      if (flashSeqRef.current !== id || flashStartedForRef.current === id) {
+        return;
+      }
+      flashStartedForRef.current = id;
+      if (flashLoadTimerRef.current) {
+        clearTimeout(flashLoadTimerRef.current);
+        flashLoadTimerRef.current = null;
+      }
+
+      const animation = Animated.sequence([
+        Animated.delay(FLASH_HOLD_FROM),
+        Animated.timing(flashCrossfade, {
+          toValue: 1,
+          duration: FLASH_CROSSFADE,
+          useNativeDriver: true,
+        }),
+        Animated.delay(FLASH_HOLD_TO),
+        Animated.timing(flashOverlayOpacity, {
+          toValue: 0,
+          duration: FLASH_FADE_OUT,
+          useNativeDriver: true,
+        }),
+      ]);
+      flashAnimRef.current = animation;
+      animation.start(({ finished }) => {
+        if (finished && flashSeqRef.current === id) {
+          flashAnimRef.current = null;
+          setFlash(null);
+        }
+      });
+    },
+    [flashCrossfade, flashOverlayOpacity]
+  );
+
+  const startFlash = useCallback(
+    (fromUri, toUri) => {
+      cancelFlash();
+      const id = flashSeqRef.current;
+      flashCrossfade.setValue(0);
+      flashOverlayOpacity.setValue(1);
+      setFlash({ id, fromUri, toUri });
+
+      // The timeline begins once the new photo is decoded (onLoad on the
+      // "to" image), with a timeout fallback, so the crossfade never
+      // reveals a still-loading image.
+      flashLoadTimerRef.current = setTimeout(
+        () => beginFlashAnimation(id),
+        FLASH_LOAD_TIMEOUT
+      );
+    },
+    [cancelFlash, beginFlashAnimation, flashCrossfade, flashOverlayOpacity]
+  );
 
   // Tracks the series the user has selected "right now" so async work
   // started for a previous series can detect it's stale and bail out
@@ -36,6 +134,9 @@ export default function CameraScreen({ navigation }) {
       setGhostPhoto(null);
       setLatestPhoto(null);
 
+      // A pending flash belongs to the previous focus/series.
+      cancelFlash();
+
       if (status === 'ready' && seriesId) {
         getLatestSeriesPhoto(seriesId)
           .then(photo => {
@@ -51,16 +152,24 @@ export default function CameraScreen({ navigation }) {
 
       return () => {
         alive = false;
+        cancelFlash();
       };
-    }, [status, activeSeries?.id])
+    }, [status, activeSeries?.id, cancelFlash])
   );
 
+  const capturingRef = useRef(false);
+
   const takePicture = async () => {
-    if (!cameraRef.current || !activeSeries?.id) {
+    if (!cameraRef.current || !activeSeries?.id || capturingRef.current) {
       return;
     }
+    capturingRef.current = true;
+
+    // Restore the live preview immediately if a flash is still showing.
+    cancelFlash();
 
     const seriesId = activeSeries.id;
+    const previousPhoto = ghostPhoto;
 
     try {
       const photo = await cameraRef.current.takePictureAsync({
@@ -74,10 +183,16 @@ export default function CameraScreen({ navigation }) {
       if (activeSeriesIdRef.current === seriesId) {
         setGhostPhoto(savedPhoto);
         setLatestPhoto(savedPhoto);
+
+        if (previousPhoto) {
+          startFlash(previousPhoto.uri, savedPhoto.uri);
+        }
       }
     } catch (error) {
       console.error('Error taking picture:', error);
       Alert.alert('エラー', '写真の保存に失敗しました。もう一度お試しください。');
+    } finally {
+      capturingRef.current = false;
     }
   };
 
@@ -156,6 +271,30 @@ export default function CameraScreen({ navigation }) {
         />
       )}
 
+      {flash && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.flashOverlay, { opacity: flashOverlayOpacity }]}
+        >
+          <Image
+            source={{ uri: flash.fromUri }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+          <Animated.Image
+            source={{ uri: flash.toUri }}
+            style={[StyleSheet.absoluteFill, { opacity: flashCrossfade }]}
+            resizeMode="cover"
+            onLoad={() => beginFlashAnimation(flash.id)}
+            onError={cancelFlash}
+          />
+          {/* 120 clears the shutter row (70px buttons + 24px padding + margin) */}
+          <View style={[styles.flashLabelWrap, { bottom: insets.bottom + 120 }]}>
+            <Text style={styles.flashLabel}>前回 → いま</Text>
+          </View>
+        </Animated.View>
+      )}
+
       <View
         pointerEvents="box-none"
         style={[styles.seriesHeader, { top: insets.top + 8 }]}
@@ -231,6 +370,27 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 1,
+  },
+  flashOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+    backgroundColor: '#000',
+  },
+  flashLabelWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  flashLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    overflow: 'hidden',
   },
   seriesHeader: {
     position: 'absolute',
