@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -12,10 +12,17 @@ import {
   Share,
   Alert,
   Linking,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSeries } from '../context/SeriesContext';
-import { listSeriesPhotos, deletePhoto, formatCapturedAt } from '../lib/photoLib';
+import {
+  listSeriesPhotos,
+  deletePhoto,
+  formatCapturedAt,
+  formatCapturedDate,
+} from '../lib/photoLib';
 import { listHibikasane } from '../lib/hibikasane';
 import HibikasaneModal from '../components/HibikasaneModal';
 
@@ -30,6 +37,50 @@ export default function GalleryScreen({ navigation }) {
   const [hibikasaneVisible, setHibikasaneVisible] = useState(false);
   const closeHibikasane = useCallback(() => setHibikasaneVisible(false), []);
   const isMountedRef = useRef(false);
+
+  // Before/after compare slider inside the viewer.
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareWidth, setCompareWidth] = useState(0);
+  const compareWidthRef = useRef(0);
+  const dividerPosRef = useRef(0);
+  const dividerX = useRef(new Animated.Value(0)).current;
+
+  const moveDivider = useCallback(
+    x => {
+      const width = compareWidthRef.current;
+      if (!width) return;
+      const clamped = Math.max(16, Math.min(width - 16, x));
+      dividerPosRef.current = clamped;
+      dividerX.setValue(clamped);
+    },
+    [dividerX]
+  );
+
+  const comparePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: evt => moveDivider(evt.nativeEvent.locationX),
+      onPanResponderMove: evt => moveDivider(evt.nativeEvent.locationX),
+    })
+  ).current;
+
+  const onCompareLayout = useCallback(
+    evt => {
+      const { width } = evt.nativeEvent.layout;
+      const isFirstMeasure = compareWidthRef.current === 0;
+      compareWidthRef.current = width;
+      setCompareWidth(width);
+      if (isFirstMeasure) {
+        dividerPosRef.current = width / 2;
+        dividerX.setValue(width / 2);
+      } else {
+        // Re-clamp after rotation or layout changes.
+        moveDivider(dividerPosRef.current);
+      }
+    },
+    [dividerX, moveDivider]
+  );
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -100,9 +151,24 @@ export default function GalleryScreen({ navigation }) {
     setHibikasaneVisible(true);
   };
 
+  const openViewer = photo => {
+    setCompareMode(false);
+    setSelectedPhoto(photo);
+  };
+
   const closeViewer = () => {
+    setCompareMode(false);
     setSelectedPhoto(null);
   };
+
+  // The photo taken just before the selected one (photos is newest-first).
+  // Hibikasane items are not in `photos`, so they never get a partner.
+  const comparePartner = useMemo(() => {
+    if (!selectedPhoto) return null;
+    const index = photos.findIndex(photo => photo.uri === selectedPhoto.uri);
+    if (index < 0 || index + 1 >= photos.length) return null;
+    return photos[index + 1];
+  }, [photos, selectedPhoto]);
 
   const handleShare = async () => {
     const photoUri = selectedPhoto?.uri;
@@ -155,7 +221,7 @@ export default function GalleryScreen({ navigation }) {
     const itemSize = screenWidth / 3;
 
     return (
-      <TouchableOpacity onPress={() => setSelectedPhoto(item)}>
+      <TouchableOpacity onPress={() => openViewer(item)}>
         <Image
           source={{ uri: item.uri }}
           style={[styles.gridItem, { width: itemSize, height: itemSize }]}
@@ -289,22 +355,75 @@ export default function GalleryScreen({ navigation }) {
         onRequestClose={closeViewer}
       >
         <SafeAreaView style={styles.viewerContainer}>
-          {selectedPhoto && (
-            <>
-              {!!viewerCaption && (
-                <Text style={styles.viewerCaption} numberOfLines={1}>
-                  {viewerCaption}
-                </Text>
-              )}
+          {selectedPhoto && compareMode && comparePartner ? (
+            <View
+              style={styles.compareArea}
+              onLayout={onCompareLayout}
+              {...comparePanResponder.panHandlers}
+            >
               <Image
                 source={{ uri: selectedPhoto.uri }}
-                style={styles.viewerImage}
+                style={StyleSheet.absoluteFill}
                 resizeMode="contain"
               />
-            </>
+              <Animated.View style={[styles.compareClip, { width: dividerX }]}>
+                {compareWidth > 0 && (
+                  <Image
+                    source={{ uri: comparePartner.uri }}
+                    style={[styles.compareInnerImage, { width: compareWidth }]}
+                    resizeMode="contain"
+                  />
+                )}
+              </Animated.View>
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.compareDivider, { transform: [{ translateX: dividerX }] }]}
+              >
+                <View style={styles.compareHandle}>
+                  <Text style={styles.compareHandleText}>◂ ▸</Text>
+                </View>
+              </Animated.View>
+              <Text style={[styles.compareLabel, styles.compareLabelLeft]}>
+                {`前回 ${formatCapturedDate(comparePartner.capturedAt)}`}
+              </Text>
+              <Text style={[styles.compareLabel, styles.compareLabelRight]}>
+                {`いま ${formatCapturedDate(selectedPhoto.capturedAt)}`}
+              </Text>
+            </View>
+          ) : (
+            selectedPhoto && (
+              <>
+                {!!viewerCaption && (
+                  <Text style={styles.viewerCaption} numberOfLines={1}>
+                    {viewerCaption}
+                  </Text>
+                )}
+                <Image
+                  source={{ uri: selectedPhoto.uri }}
+                  style={styles.viewerImage}
+                  resizeMode="contain"
+                />
+              </>
+            )
           )}
 
           <View style={styles.viewerActions}>
+            {!!comparePartner && (
+              <TouchableOpacity
+                style={styles.viewerButton}
+                onPress={() => setCompareMode(current => !current)}
+              >
+                <Text
+                  style={[
+                    styles.viewerButtonText,
+                    compareMode && styles.viewerButtonTextActive,
+                  ]}
+                >
+                  くらべる
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity style={styles.viewerButton} onPress={handleShare}>
               <Text style={styles.viewerButtonText}>共有</Text>
             </TouchableOpacity>
@@ -468,7 +587,68 @@ const styles = StyleSheet.create({
   },
   viewerButton: {
     paddingVertical: 12,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
+  },
+  viewerButtonTextActive: {
+    color: '#4fa98a',
+  },
+  compareArea: {
+    flex: 1,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  compareClip: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    overflow: 'hidden',
+  },
+  compareInnerImage: {
+    height: '100%',
+  },
+  compareDivider: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: -1,
+    width: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  compareHandle: {
+    width: 44,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  compareHandleText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  compareLabel: {
+    position: 'absolute',
+    top: 12,
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    overflow: 'hidden',
+  },
+  compareLabelLeft: {
+    left: 12,
+  },
+  compareLabelRight: {
+    right: 12,
   },
   viewerButtonText: {
     color: '#fff',
