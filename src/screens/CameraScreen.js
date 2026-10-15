@@ -23,6 +23,7 @@ import {
 } from '../lib/photoLib';
 import SeriesPickerModal from '../components/SeriesPickerModal';
 import OnboardingOverlay from '../components/OnboardingOverlay';
+import ReminderModal from '../components/ReminderModal';
 
 const GHOST_OPACITY_STEPS = [0.15, 0.3, 0.5];
 
@@ -41,6 +42,7 @@ export default function CameraScreen({ navigation }) {
   const [latestPhoto, setLatestPhoto] = useState(null);
   const [ghostOpacity, setGhostOpacity] = useState(0.3);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [reminderVisible, setReminderVisible] = useState(false);
   const [streak, setStreak] = useState(0);
 
   // "Days since last shot" must refresh when the app comes back to the
@@ -340,7 +342,9 @@ export default function CameraScreen({ navigation }) {
         style={[styles.seriesHeader, { top: insets.top + 8 }]}
       >
         <TouchableOpacity style={styles.seriesChip} onPress={() => setPickerVisible(true)}>
-          <Text style={styles.seriesChipText}>{activeSeries.name} ▾</Text>
+          <Text style={styles.seriesChipText} numberOfLines={1} ellipsizeMode="tail">
+            {activeSeries.name} ▾
+          </Text>
         </TouchableOpacity>
 
         {ghostPhoto && (
@@ -364,6 +368,16 @@ export default function CameraScreen({ navigation }) {
           </Text>
         )}
       </View>
+
+      <TouchableOpacity
+        style={[styles.reminderButton, { top: insets.top + 8 }]}
+        onPress={() => setReminderVisible(true)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel="撮影リマインダー"
+      >
+        <Text style={styles.reminderButtonText}>🔔</Text>
+      </TouchableOpacity>
 
       <View
         pointerEvents="box-none"
@@ -398,6 +412,7 @@ export default function CameraScreen({ navigation }) {
       </View>
 
       <SeriesPickerModal visible={pickerVisible} onClose={() => setPickerVisible(false)} />
+      <ReminderModal visible={reminderVisible} onClose={() => setReminderVisible(false)} />
     </View>
   );
 }
@@ -452,6 +467,23 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 2,
     alignItems: 'center',
+    // Keep long series-name chips clear of the reminder bell (right: 20,
+    // width 36) and symmetric on the left.
+    paddingHorizontal: 64,
+  },
+  reminderButton: {
+    position: 'absolute',
+    right: 20,
+    zIndex: 2,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reminderButtonText: {
+    fontSize: 16,
   },
   seriesChip: {
     backgroundColor: 'rgba(0, 0, 0, 0.35)',
