@@ -29,7 +29,7 @@ title: ヒビカメ（HibiCam）プライバシーポリシー・サポート
 
 ## 利用する権限
 
-本アプリが利用するデバイス権限は**カメラのみ**です。カメラ権限は、定点観測写真を撮影する目的以外には使用しません。マイク・位置情報・連絡先など、その他の権限は要求しません。
+本アプリが利用するデバイス権限は**カメラ**と、撮影リマインダーを利用する場合の**通知**のみです。カメラ権限は、定点観測写真を撮影する目的以外には使用しません。リマインダー通知は端末内で完結するローカル通知で、通知のために外部サーバーへ情報が送信されることはありません。マイク・位置情報・連絡先など、その他の権限は要求しません。
 
 ## データの削除
 
@@ -81,7 +81,7 @@ Photos you take with the App are stored **only on your own device**, inside the 
 
 ## Permissions Used
 
-The App requests **Camera access only**. Camera access is used solely to let you take fixed-point observation photos. The App does not request access to the microphone, location, contacts, or any other permission.
+The App requests **Camera access**, plus **Notifications** only if you turn on the optional shooting reminder. Camera access is used solely to let you take fixed-point observation photos. The reminder is a local notification scheduled entirely on your device; no information is sent to any server for notifications. The App does not request access to the microphone, location, contacts, or any other permission.
 
 ## Data Deletion
 
