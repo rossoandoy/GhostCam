@@ -47,6 +47,11 @@ export async function saveReminderSettings(settings) {
   storeFile().write(JSON.stringify(settings));
 }
 
+export async function hasNotificationPermission() {
+  const current = await Notifications.getPermissionsAsync();
+  return current.granted === true;
+}
+
 // 'granted' | 'denied' (can ask again later) | 'blocked' (needs Settings).
 export async function ensureNotificationPermission() {
   const current = await Notifications.getPermissionsAsync();
@@ -63,16 +68,18 @@ export async function ensureNotificationPermission() {
   return next.canAskAgain === false ? 'blocked' : 'denied';
 }
 
-// The app schedules exactly one local notification (the daily reminder),
-// so cancel-all before (re)scheduling keeps the OS state in sync with
-// the stored settings.
+const REMINDER_ID = 'daily-reminder';
+
+// A fixed identifier scopes cancel/replace to the reminder alone, so any
+// future notification kinds won't be swept away.
 export async function applyReminderSchedule(settings) {
-  await Notifications.cancelAllScheduledNotificationsAsync();
+  await Notifications.cancelScheduledNotificationAsync(REMINDER_ID).catch(() => {});
   if (!settings.enabled) {
     return;
   }
 
   await Notifications.scheduleNotificationAsync({
+    identifier: REMINDER_ID,
     content: {
       title: 'きょうの1枚を撮りましょう',
       body: '前回と同じ場所・同じ角度で、今日の変化を記録しませんか。',

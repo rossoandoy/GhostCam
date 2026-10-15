@@ -14,6 +14,7 @@ import {
   loadReminderSettings,
   saveReminderSettings,
   ensureNotificationPermission,
+  hasNotificationPermission,
   applyReminderSchedule,
 } from '../lib/reminderStore';
 
@@ -34,19 +35,33 @@ export default function ReminderModal({ visible, onClose }) {
   useEffect(() => {
     if (!visible) return;
     let alive = true;
-    loadReminderSettings().then(settings => {
+    (async () => {
+      const settings = await loadReminderSettings();
+      let enabledView = settings.enabled;
+      // Reflect an OS-side revocation (notifications turned off in
+      // Settings) as OFF instead of a misleading ON switch.
+      if (enabledView && !(await hasNotificationPermission())) {
+        enabledView = false;
+      }
       if (!alive) return;
-      setEnabled(settings.enabled);
+      setEnabled(enabledView);
       setHour(settings.hour);
       setMinute(settings.minute);
+    })().catch(error => {
+      console.error('Error loading reminder settings:', error);
     });
     return () => {
       alive = false;
     };
   }, [visible]);
 
-  const shiftHour = delta => setHour(current => (current + delta + 24) % 24);
-  const shiftMinute = delta => setMinute(current => (current + delta + 60) % 60);
+  // Total-minutes arithmetic so the minute stepper carries into the hour
+  // (20:55 +5 → 21:00) and wraps across midnight.
+  const shiftTime = deltaMinutes => {
+    const total = (hour * 60 + minute + deltaMinutes + 1440) % 1440;
+    setHour(Math.floor(total / 60));
+    setMinute(total % 60);
+  };
 
   const handleSave = async () => {
     if (saving) return;
@@ -56,6 +71,7 @@ export default function ReminderModal({ visible, onClose }) {
       if (enabled) {
         const permission = await ensureNotificationPermission();
         if (permission === 'blocked') {
+          setEnabled(false);
           Alert.alert(
             '通知が許可されていません',
             '設定アプリでヒビカメの通知を許可すると、リマインダーが使えます。',
@@ -73,14 +89,23 @@ export default function ReminderModal({ visible, onClose }) {
           return;
         }
         if (permission !== 'granted') {
+          setEnabled(false);
           Alert.alert('リマインダー', '通知が許可されなかったため、リマインダーはオフのままです。');
           return;
         }
       }
 
+      // Persist first, then schedule; roll back the file if scheduling
+      // fails so the stored settings never claim a reminder that isn't set.
       const settings = { enabled, hour, minute };
-      await applyReminderSchedule(settings);
+      const previous = await loadReminderSettings();
       await saveReminderSettings(settings);
+      try {
+        await applyReminderSchedule(settings);
+      } catch (applyError) {
+        await saveReminderSettings(previous).catch(() => {});
+        throw applyError;
+      }
       onClose();
     } catch (error) {
       console.error('Error saving reminder:', error);
@@ -109,21 +134,41 @@ export default function ReminderModal({ visible, onClose }) {
 
             <View style={styles.stepperRow}>
               <View style={styles.stepperGroup}>
-                <TouchableOpacity style={styles.stepperButton} onPress={() => shiftHour(-1)}>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => shiftTime(-60)}
+                  accessibilityRole="button"
+                  accessibilityLabel="1時間早く"
+                >
                   <Text style={styles.stepperButtonText}>−</Text>
                 </TouchableOpacity>
                 <Text style={styles.stepperLabel}>時</Text>
-                <TouchableOpacity style={styles.stepperButton} onPress={() => shiftHour(1)}>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => shiftTime(60)}
+                  accessibilityRole="button"
+                  accessibilityLabel="1時間遅く"
+                >
                   <Text style={styles.stepperButtonText}>＋</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.stepperGroup}>
-                <TouchableOpacity style={styles.stepperButton} onPress={() => shiftMinute(-5)}>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => shiftTime(-5)}
+                  accessibilityRole="button"
+                  accessibilityLabel="5分早く"
+                >
                   <Text style={styles.stepperButtonText}>−</Text>
                 </TouchableOpacity>
                 <Text style={styles.stepperLabel}>分</Text>
-                <TouchableOpacity style={styles.stepperButton} onPress={() => shiftMinute(5)}>
+                <TouchableOpacity
+                  style={styles.stepperButton}
+                  onPress={() => shiftTime(5)}
+                  accessibilityRole="button"
+                  accessibilityLabel="5分遅く"
+                >
                   <Text style={styles.stepperButtonText}>＋</Text>
                 </TouchableOpacity>
               </View>

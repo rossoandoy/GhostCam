@@ -33,7 +33,10 @@ export async function maybeRequestReview() {
   try {
     const state = await loadState();
     const now = Date.now();
-    if (state.lastPromptAt && now - state.lastPromptAt < MIN_INTERVAL_MS) {
+    // A negative delta (clock rolled back) counts as "interval satisfied"
+    // so a future lastPromptAt can never block prompts forever.
+    const sinceLast = now - state.lastPromptAt;
+    if (state.lastPromptAt && sinceLast >= 0 && sinceLast < MIN_INTERVAL_MS) {
       return;
     }
     if (!(await StoreReview.isAvailableAsync())) {
@@ -41,7 +44,8 @@ export async function maybeRequestReview() {
     }
 
     // Record before asking: the OS may silently skip the dialog and we
-    // must not end up re-asking on every save.
+    // must not end up re-asking on every save. promptCount is kept for
+    // future tuning (e.g. stop after N lifetime asks).
     storeFile().write(
       JSON.stringify({ lastPromptAt: now, promptCount: state.promptCount + 1 })
     );

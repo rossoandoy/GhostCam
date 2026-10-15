@@ -342,7 +342,9 @@ export default function CameraScreen({ navigation }) {
         style={[styles.seriesHeader, { top: insets.top + 8 }]}
       >
         <TouchableOpacity style={styles.seriesChip} onPress={() => setPickerVisible(true)}>
-          <Text style={styles.seriesChipText}>{activeSeries.name} ▾</Text>
+          <Text style={styles.seriesChipText} numberOfLines={1} ellipsizeMode="tail">
+            {activeSeries.name} ▾
+          </Text>
         </TouchableOpacity>
 
         {ghostPhoto && (
@@ -370,6 +372,9 @@ export default function CameraScreen({ navigation }) {
       <TouchableOpacity
         style={[styles.reminderButton, { top: insets.top + 8 }]}
         onPress={() => setReminderVisible(true)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel="撮影リマインダー"
       >
         <Text style={styles.reminderButtonText}>🔔</Text>
       </TouchableOpacity>
@@ -462,6 +467,9 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 2,
     alignItems: 'center',
+    // Keep long series-name chips clear of the reminder bell (right: 20,
+    // width 36) and symmetric on the left.
+    paddingHorizontal: 64,
   },
   reminderButton: {
     position: 'absolute',
