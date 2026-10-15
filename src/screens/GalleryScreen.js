@@ -45,6 +45,8 @@ export default function GalleryScreen({ navigation }) {
   const dividerPosRef = useRef(0);
   const dividerX = useRef(new Animated.Value(0)).current;
 
+  const dragOffsetRef = useRef(0);
+
   const moveDivider = useCallback(
     x => {
       const width = compareWidthRef.current;
@@ -56,12 +58,23 @@ export default function GalleryScreen({ navigation }) {
     [dividerX]
   );
 
+  // The pan handlers live on a transparent overlay that is the topmost
+  // child of the compare area, so locationX is always relative to the
+  // full area (RN reports it relative to the deepest touched view).
   const comparePanResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: evt => moveDivider(evt.nativeEvent.locationX),
-      onPanResponderMove: evt => moveDivider(evt.nativeEvent.locationX),
+      onPanResponderGrant: evt => {
+        const x = evt.nativeEvent.locationX;
+        // Grabbing near the divider drags it without jumping; a touch
+        // elsewhere jumps straight to that position.
+        const nearDivider = Math.abs(x - dividerPosRef.current) <= 32;
+        dragOffsetRef.current = nearDivider ? dividerPosRef.current - x : 0;
+        moveDivider(x + dragOffsetRef.current);
+      },
+      onPanResponderMove: evt =>
+        moveDivider(evt.nativeEvent.locationX + dragOffsetRef.current),
     })
   ).current;
 
@@ -153,6 +166,9 @@ export default function GalleryScreen({ navigation }) {
 
   const openViewer = photo => {
     setCompareMode(false);
+    // Recenter the slider for each newly opened photo (the compare area
+    // remounts, so the next onLayout re-initializes to width / 2).
+    compareWidthRef.current = 0;
     setSelectedPhoto(photo);
   };
 
@@ -356,40 +372,57 @@ export default function GalleryScreen({ navigation }) {
       >
         <SafeAreaView style={styles.viewerContainer}>
           {selectedPhoto && compareMode && comparePartner ? (
-            <View
-              style={styles.compareArea}
-              onLayout={onCompareLayout}
-              {...comparePanResponder.panHandlers}
-            >
-              <Image
-                source={{ uri: selectedPhoto.uri }}
-                style={StyleSheet.absoluteFill}
-                resizeMode="contain"
-              />
-              <Animated.View style={[styles.compareClip, { width: dividerX }]}>
-                {compareWidth > 0 && (
-                  <Image
-                    source={{ uri: comparePartner.uri }}
-                    style={[styles.compareInnerImage, { width: compareWidth }]}
-                    resizeMode="contain"
-                  />
-                )}
-              </Animated.View>
-              <Animated.View
-                pointerEvents="none"
-                style={[styles.compareDivider, { transform: [{ translateX: dividerX }] }]}
-              >
-                <View style={styles.compareHandle}>
-                  <Text style={styles.compareHandleText}>◂ ▸</Text>
-                </View>
-              </Animated.View>
-              <Text style={[styles.compareLabel, styles.compareLabelLeft]}>
-                {`前回 ${formatCapturedDate(comparePartner.capturedAt)}`}
+            <>
+              {/* Same slot/height as the normal caption so the image
+                  doesn't jump when toggling compare mode. */}
+              <Text style={styles.viewerCaption} numberOfLines={1}>
+                境界を左右にドラッグして比較
               </Text>
-              <Text style={[styles.compareLabel, styles.compareLabelRight]}>
-                {`いま ${formatCapturedDate(selectedPhoto.capturedAt)}`}
-              </Text>
-            </View>
+              {/* Both photos come from the same camera setup, so they share
+                  an aspect ratio and their `contain` layouts line up. If
+                  mixed ratios ever enter a series (e.g. imports), switch
+                  both to a shared-ratio box with `cover`. */}
+              <View style={styles.compareArea} onLayout={onCompareLayout}>
+                <Image
+                  source={{ uri: selectedPhoto.uri }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="contain"
+                />
+                <Animated.View style={[styles.compareClip, { width: dividerX }]}>
+                  {compareWidth > 0 && (
+                    <Image
+                      source={{ uri: comparePartner.uri }}
+                      style={[styles.compareInnerImage, { width: compareWidth }]}
+                      resizeMode="contain"
+                    />
+                  )}
+                </Animated.View>
+                <Animated.View
+                  pointerEvents="none"
+                  style={[styles.compareDivider, { transform: [{ translateX: dividerX }] }]}
+                >
+                  <View style={styles.compareHandle}>
+                    <Text style={styles.compareHandleText}>◂ ▸</Text>
+                  </View>
+                </Animated.View>
+                <Text pointerEvents="none" style={[styles.compareLabel, styles.compareLabelLeft]}>
+                  {['前回', formatCapturedDate(comparePartner.capturedAt)]
+                    .filter(Boolean)
+                    .join(' ')}
+                </Text>
+                <Text pointerEvents="none" style={[styles.compareLabel, styles.compareLabelRight]}>
+                  {['いま', formatCapturedDate(selectedPhoto.capturedAt)]
+                    .filter(Boolean)
+                    .join(' ')}
+                </Text>
+                {/* Topmost, transparent: every touch lands here, keeping
+                    locationX relative to the full compare area. */}
+                <View
+                  style={StyleSheet.absoluteFill}
+                  {...comparePanResponder.panHandlers}
+                />
+              </View>
+            </>
           ) : (
             selectedPhoto && (
               <>
