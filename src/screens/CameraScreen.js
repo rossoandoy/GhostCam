@@ -23,6 +23,7 @@ import {
 } from '../lib/photoLib';
 import SeriesPickerModal from '../components/SeriesPickerModal';
 import OnboardingOverlay from '../components/OnboardingOverlay';
+import ReminderModal from '../components/ReminderModal';
 
 const GHOST_OPACITY_STEPS = [0.15, 0.3, 0.5];
 
@@ -41,6 +42,7 @@ export default function CameraScreen({ navigation }) {
   const [latestPhoto, setLatestPhoto] = useState(null);
   const [ghostOpacity, setGhostOpacity] = useState(0.3);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [reminderVisible, setReminderVisible] = useState(false);
   const [streak, setStreak] = useState(0);
 
   // "Days since last shot" must refresh when the app comes back to the
@@ -365,6 +367,13 @@ export default function CameraScreen({ navigation }) {
         )}
       </View>
 
+      <TouchableOpacity
+        style={[styles.reminderButton, { top: insets.top + 8 }]}
+        onPress={() => setReminderVisible(true)}
+      >
+        <Text style={styles.reminderButtonText}>🔔</Text>
+      </TouchableOpacity>
+
       <View
         pointerEvents="box-none"
         style={[styles.controls, { paddingBottom: insets.bottom + 24 }]}
@@ -398,6 +407,7 @@ export default function CameraScreen({ navigation }) {
       </View>
 
       <SeriesPickerModal visible={pickerVisible} onClose={() => setPickerVisible(false)} />
+      <ReminderModal visible={reminderVisible} onClose={() => setReminderVisible(false)} />
     </View>
   );
 }
@@ -452,6 +462,20 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 2,
     alignItems: 'center',
+  },
+  reminderButton: {
+    position: 'absolute',
+    right: 20,
+    zIndex: 2,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  reminderButtonText: {
+    fontSize: 16,
   },
   seriesChip: {
     backgroundColor: 'rgba(0, 0, 0, 0.35)',

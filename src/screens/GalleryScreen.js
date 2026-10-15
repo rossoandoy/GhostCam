@@ -24,6 +24,7 @@ import {
   formatCapturedDate,
 } from '../lib/photoLib';
 import { listHibikasane } from '../lib/hibikasane';
+import { maybeRequestReview } from '../lib/reviewPrompt';
 import HibikasaneModal from '../components/HibikasaneModal';
 
 const PRIVACY_POLICY_URL = 'https://rossoandoy.github.io/GhostCam/';
@@ -151,6 +152,12 @@ export default function GalleryScreen({ navigation }) {
         console.error('Error refreshing hibikasane:', error);
       });
     }
+
+    // Ask for a store review at this happy moment, after the saved tab has
+    // settled. Fire-and-forget with its own frequency guard.
+    setTimeout(() => {
+      maybeRequestReview();
+    }, 1500);
   }, [activeSeries?.id, refreshHibikasane]);
 
   const handleHibikasanePress = () => {
