@@ -4,6 +4,8 @@ title: ヒビカメ（HibiCam）プライバシーポリシー・サポート
 
 # ヒビカメ（HibiCam） プライバシーポリシー
 
+<a href="https://apps.apple.com/jp/app/id6821589320"><img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/ja-jp" alt="App Storeでダウンロード" height="54"></a>
+
 **制定日: 2026年7月5日**
 
 「ヒビカメ（HibiCam）」（以下「本アプリ」）は、個人開発者（Kohei Ando）が提供する定点観測カメラアプリです。本アプリにおける利用者の情報の取り扱いについて、以下のとおりお知らせします。
